@@ -7,9 +7,6 @@ from pathlib import Path
 # Variables
 zctaArcGISMap = "https://services2.arcgis.com/FiaPA4ga0iQKduv3/arcgis/rest/services/Census_ZIP_Code_Tabulation_Areas_2010_v1/FeatureServer"
 
-
-
-
 # Initialize QGIS
 QgsApplication.setPrefixPath("~/QGIS 3.32.3", True)
 qgs = QgsApplication([], False)
@@ -24,80 +21,71 @@ canvas.setCanvasColor(Qt.white)
 project = QgsProject.instance()
 project.read()
 
-# Load a all layers
-layers = []
-scriptDirectory = os.path.dirname(os.path.abspath(__file__))
-layersFolder = Path("layers/qgis_sample_data/shapefiles")
-folderDirectory = os.path.join(scriptDirectory, layersFolder)
-
-for filename in os.listdir(folderDirectory):
-    fullFile = folderDirectory + "/" + filename
-    
-    layer = QgsVectorLayer(fullFile, filename, "ogr")
-    path, type = os.path.splitext(filename)
-    
-    print(layer.isValid())
-    #print(filename.endswith(".shp"))
-    print(fullFile)
-    
-    if layer.isValid() and filename.endswith(".shp"):
-        # Add the layer to the canvas
-        #layers.add(layer)
-        project.instance().addMapLayer(layer)
-        canvas.setExtent(layer.extent())
-        #print(os.path.abspath(filename))
-        #print(Path(filename).stem)
-        print("success")
-    else:
-        print()
-        # print("Layer failed to load!")
-        print(os.path.abspath(filename))
-        # print(Path(filename).stem)
-
-
-# layer = QgsVectorLayer("C:/School/Junior/B Term/IQP/qgis-app/layers/qgis_sample_data/shapefiles/airports.shp", "airports", "ogr")
-# if not layer.isValid():
-#     print("Layer failed to load!")
-#     #print(os.path.abspath(filename))
-# else:
-#     # Add the layer to the canvas
-#     #layers.add(layer)
-#     project.instance().addMapLayer(layer)
-#     canvas.setExtent(layer.extent())
-#     #print(os.path.abspath(filename))
-#     #print(Path(filename).stem)
-#     print("success")
-    
-# layer = QgsVectorLayer("C:/School/Junior/B Term/IQP/qgis-app/layers/qgis_sample_data/shapefiles/alaska.shp", "alaska", "ogr")
-# if not layer.isValid():
-#     print("Layer failed to load!")
-#     #print(os.path.abspath(filename))
-# else:
-#     # Add the layer to the canvas
-#     #layers.add(layer)
-#     project.instance().addMapLayer(layer)
-#     canvas.setExtent(layer.extent())
-#     #print(os.path.abspath(filename))
-#     #print(Path(filename).stem)
-#     print("success")
-
-# Create a QgsDataSourceUri to specify the WMS connection
+"""# Create a QgsDataSourceUri to specify the WMS connection
 uri = QgsDataSourceUri()
 uri.setParam("url", zctaArcGISMap)
 
 # Create a new QgsRasterLayer based on the WMS connection
-layer = QgsRasterLayer(uri.uri(), "ArcGIS Base Map", "wms")
+aGISLayer = QgsRasterLayer(uri.uri(), "ArcGIS Base Map", "wms")"""
 
-# Add the layer to the current project
-project.instance().addMapLayer(layer)
+# uri = QgsDataSourceUri()
+# uri.setParam('crs', 'EPSG:3857')
+# uri.setParam('url', 'https://services2.arcgis.com/FiaPA4ga0iQKduv3/ArcGIS/rest/services/Census_ZIP_Code_Tabulation_Areas_2010_v1/FeatureServer/0')
 
-# Set up a layer tree and bridge to the canvas
-root = project.instance().layerTreeRoot()
-bridge = QgsLayerTreeMapCanvasBridge(root, canvas)
-root.addLayer(layer)
+# alayer = QgsVectorLayer(uri.uri(), "Test Layer" , 'arcgisfeatureserver')
+# alayer.setSubsetString('"classsubtype" = 12')
+# if alayer.isValid():
+#     QgsProject.instance().addMapLayer(alayer)
+# else:
+#     print('Invalid layer: failed to add layer')
+# print("Past here")
+# # Add the layer to the current project
+# #project.instance().addMapLayer(aGISLayer)
 
+# # Set up a layer tree and bridge to the canvas
+# root = project.instance().layerTreeRoot()
+# bridge = QgsLayerTreeMapCanvasBridge(root, canvas)
+# root.addLayer(alayer)
 
+arcgis_layer = QgsRasterLayer('https://services2.arcgis.com/FiaPA4ga0iQKduv3/ArcGIS/rest/services/Census_ZIP_Code_Tabulation_Areas_2010_v1/FeatureServer/0', "ArcGIS Map", "wms", QgsRasterLayer.LayerOptions(True))
+print(QgsRasterLayer.LayerOptions.loadDefaultStyle)
 
+# Check if the layer was loaded successfully
+if not arcgis_layer.isValid():
+    print("Failed to load ArcGIS layer")
+else:
+    # Add the layer to the current QGIS project
+    QgsProject.instance().addMapLayer(arcgis_layer)
+
+    # Show the layer in the Layers Panel
+    root = QgsProject.instance().layerTreeRoot()
+    layer = root.addLayer(arcgis_layer)
+
+    # Set the extent to the full extent of the layer
+    iface.mapCanvas().setExtent(arcgis_layer.extent())
+
+    # Refresh the map canvas
+    iface.mapCanvas().refresh()
+
+# Load all layers
+# layers = []
+# scriptDirectory = os.path.dirname(os.path.abspath(__file__))
+# layersFolder = "layers/qgis_sample_data/shapefiles"
+# folderDirectory = os.path.join(scriptDirectory, layersFolder)
+
+# for filename in os.listdir(folderDirectory):
+#     fullFile = folderDirectory + "/" + filename
+#     layer = QgsVectorLayer(fullFile, filename, "ogr")
+#     path, type = os.path.splitext(filename)
+    
+#     if layer.isValid() and filename.endswith(".shp"):
+#         # Add the layer to the canvas
+#         #layers.add(layer)
+#         project.instance().addMapLayer(layer)
+#         canvas.setExtent(layer.extent())
+#     elif filename.endswith(".shp"):
+#         print("Layer failed to load!")
+        
 # Show the map canvas
 canvas.show()
 
