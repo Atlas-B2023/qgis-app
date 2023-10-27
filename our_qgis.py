@@ -18,6 +18,7 @@ canvas.setCanvasColor(Qt.white)
 project = QgsProject.instance()
 project.read()
 
+# Set up a layer tree and bridge to the canvas
 root = project.instance().layerTreeRoot()
 bridge = QgsLayerTreeMapCanvasBridge(root, canvas)
 
