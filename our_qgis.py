@@ -4,9 +4,6 @@ from qgis.utils import *
 from PyQt5.QtCore import Qt
 from pathlib import Path
 
-# Variables
-zctaArcGISMap = "https://services2.arcgis.com/FiaPA4ga0iQKduv3/arcgis/rest/services/Census_ZIP_Code_Tabulation_Areas_2010_v1/FeatureServer"
-
 # Initialize QGIS
 QgsApplication.setPrefixPath("~/QGIS 3.32.3", True)
 qgs = QgsApplication([], False)
@@ -20,6 +17,9 @@ canvas.setCanvasColor(Qt.white)
 # Create a project
 project = QgsProject.instance()
 project.read()
+
+root = project.instance().layerTreeRoot()
+bridge = QgsLayerTreeMapCanvasBridge(root, canvas)
 
 # Load all layers
 layers = []
