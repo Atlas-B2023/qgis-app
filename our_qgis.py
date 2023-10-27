@@ -27,18 +27,59 @@ project.read()
 # Load a all layers
 layers = []
 scriptDirectory = os.path.dirname(os.path.abspath(__file__))
-layersFolder = "layers"
+layersFolder = Path("layers/qgis_sample_data/shapefiles")
 folderDirectory = os.path.join(scriptDirectory, layersFolder)
 
 for filename in os.listdir(folderDirectory):
-    layer = QgsVectorLayer(os.path.abspath(filename), Path(filename).stem, "ogr")
-    if not layer.isValid():
-        print("Layer failed to load!")
-    else:
+    fullFile = folderDirectory + "/" + filename
+    
+    layer = QgsVectorLayer(fullFile, filename, "ogr")
+    path, type = os.path.splitext(filename)
+    
+    print(layer.isValid())
+    #print(filename.endswith(".shp"))
+    print(fullFile)
+    
+    if layer.isValid() and filename.endswith(".shp"):
         # Add the layer to the canvas
-        layers.add(layer)
+        #layers.add(layer)
         project.instance().addMapLayer(layer)
         canvas.setExtent(layer.extent())
+        #print(os.path.abspath(filename))
+        #print(Path(filename).stem)
+        print("success")
+    else:
+        print()
+        # print("Layer failed to load!")
+        print(os.path.abspath(filename))
+        # print(Path(filename).stem)
+
+
+# layer = QgsVectorLayer("C:/School/Junior/B Term/IQP/qgis-app/layers/qgis_sample_data/shapefiles/airports.shp", "airports", "ogr")
+# if not layer.isValid():
+#     print("Layer failed to load!")
+#     #print(os.path.abspath(filename))
+# else:
+#     # Add the layer to the canvas
+#     #layers.add(layer)
+#     project.instance().addMapLayer(layer)
+#     canvas.setExtent(layer.extent())
+#     #print(os.path.abspath(filename))
+#     #print(Path(filename).stem)
+#     print("success")
+    
+# layer = QgsVectorLayer("C:/School/Junior/B Term/IQP/qgis-app/layers/qgis_sample_data/shapefiles/alaska.shp", "alaska", "ogr")
+# if not layer.isValid():
+#     print("Layer failed to load!")
+#     #print(os.path.abspath(filename))
+# else:
+#     # Add the layer to the canvas
+#     #layers.add(layer)
+#     project.instance().addMapLayer(layer)
+#     canvas.setExtent(layer.extent())
+#     #print(os.path.abspath(filename))
+#     #print(Path(filename).stem)
+#     print("success")
 
 # Create a QgsDataSourceUri to specify the WMS connection
 uri = QgsDataSourceUri()
