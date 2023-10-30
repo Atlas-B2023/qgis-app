@@ -61,6 +61,8 @@ class IdentifyMapTool(QgsMapTool):
 # Set the custom identify map tool
 identifyMapTool = IdentifyMapTool(canvas, layers)
 canvas.setMapTool(identifyMapTool)
+iface.actionIdentify().trigger()
+identifyMapTool = IdentifyMapTool(canvas, layers)
         
 # Show the map canvas
 canvas.show()
