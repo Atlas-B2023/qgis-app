@@ -2,8 +2,8 @@ from qgis.core import *
 from qgis.gui import *
 from qgis.utils import *
 from PyQt5.QtCore import Qt
+from PyQt5 import QtGui
 from pathlib import Path
-import numpy
 
 # Initialize QGIS
 QgsApplication.setPrefixPath("~/QGIS 3.32.3", True)
@@ -68,7 +68,43 @@ for fileName in os.listdir(folderDirectory):
         prov.addFeatures(feats)
         
         if layer.isValid():
-            QgsProject.instance().addMapLayer(layer)
+            attributes = ["Year-Built",
+                          "Price",
+                          "Square-Feet"]
+            for attribute_name in attributes:
+                heatmap_layer = QgsVectorLayer("Point?crs=EPSG:4326", f"Heatmap - {attribute_name}", "memory")
+                heatmap_provider = heatmap_layer.dataProvider()
+                
+                heatmap_renderer = QgsHeatmapRenderer()
+                heatmap_renderer.setWeightExpression('1')
+                heatmap_renderer.setRadius(10)
+                heatmap_renderer.setColorRamp(QgsStyle().defaultStyle().colorRamp('Red to Green'))
+                
+                feats = []
+                for feat in prov.getFeatures():
+                    lat = feat['Latitude']
+                    lon = feat['Longitude']
+                    try:
+                        value = float(feat[attribute_name])
+                    except:
+                        print(feat[attribute_name])
+                    
+                    new_feat = QgsFeature()
+                    new_feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(float(lon), float(lat))))
+                    if value > 0:
+                        feats.append(new_feat)
+                
+                heatmap_provider.addFeatures(feats)
+                heatmap_layer.setRenderer(heatmap_renderer)
+                
+                # Add the heatmap layer to the Layer Tree
+                root = QgsProject.instance().layerTreeRoot()
+                root.insertChildNode(0, QgsLayerTreeLayer(heatmap_layer))
+
+                # Refresh the map canvas to display the heatmap
+                layer.triggerRepaint()
+                layers.append(layer)
+                canvas.refresh()
         else:
             print("Layer " + fileName + " failed to load!")
         
