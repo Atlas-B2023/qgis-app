@@ -31,7 +31,7 @@ layersFolder = "layers"
 folderDirectory = os.path.join(scriptDirectory, layersFolder)
 
 for fileName in os.listdir(folderDirectory):
-    fullFile = folderDirectory + "/" + fileName
+    fullFile = folderDirectory + os.sep + fileName
     path, type = os.path.splitext(fileName)
     
     if fileName.endswith(".shp"):
@@ -44,26 +44,33 @@ for fileName in os.listdir(folderDirectory):
         else:
             print("Layer " + fileName + " failed to load!")
     elif fileName.endswith(".csv"):
-        data = numpy.loadtxt(fullFile, dtype=str, delimiter=",", skiprows=1)
-        uri = 'file:///' + fullFile + "?delimiter=,&yField={}&xField={}".format('LATITUDE', 'LONGITUDE')
-        vl = QgsVectorLayer(uri, fileName, 'delimitedtext')
-        if vl.isValid():
-            QgsProject.instance().addMapLayer(vl)
-            for r in data:
-                f = QgsFeature(vl.fields())
-                f['LATITUDE'] = float(r[7])
-                f['LONGITUDE'] = float(r[8])
-                
-                geom = QgsGeometry.fromPointXY(QgsPointXY(float(r[7]), float(r[8])))
-                f.setGeometry(geom)
-                vl.dataProvider().addFeatures([f])
-                
-            vl.updateExtents()
-            layers.append(vl)
+        layer = QgsVectorLayer("Point?crs=EPSG:4326&field=Address:string&field=City:string&field=State/Province:string&field=Year-Built:string&field=Zip/Postal:string&field=Price:string&field=Square-Feet:string&field=Latitude:string&field=Longitude:string&field=Heat-Amenities:string", "locations", "memory")
+        prov = layer.dataProvider()
+        fields = prov.fields()
+        feats = []
+        with open(fullFile) as f:
+            lines = f.read().splitlines()
+            for line in lines[1:]:
+                address, city, state, year, zipcode, price, sqrft, lat, lon, heatAmen = line.split(",")
+                feat = QgsFeature(fields)
+                feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(float(lon), float(lat))))
+                feat["Address"] = address
+                feat["City"] = city
+                feat["State/Province"] = state
+                feat["Year-Built"] = year
+                feat["Zip/Postal"] = zipcode
+                feat["Price"] = price
+                feat["Square-Feet"] = sqrft
+                feat["Latitude"] = lat
+                feat["Longitude"] = lon
+                feat["Heat-Amenities"] = heatAmen
+                feats.append(feat)
+        prov.addFeatures(feats)
+        
+        if layer.isValid():
+            QgsProject.instance().addMapLayer(layer)
         else:
             print("Layer " + fileName + " failed to load!")
-    elif fileName.endswith(".shp") or fileName.endswith(".csv"):
-        print("Layer " + fileName + " failed to load!")
         
 # # Custom map tool for identifying features
 # class IdentifyMapTool(QgsMapTool):
