@@ -1,5 +1,8 @@
 /.venv
 /.vscode
 /__pycache__
-/layers
+/layers/Housing_Data
+/layers/Metro_Zips
+/layers/qgis_sample_data
+/layers/State_Zips
 .env
