@@ -2,14 +2,29 @@ from qgis.core import *
 from qgis.gui import *
 from qgis.utils import *
 from PyQt5.QtCore import Qt
-from PyQt5 import QtGui
-import logging
 from qgis.PyQt.QtGui import QColor
+import logging
+import csv
+import typing
+import itertools
+import traceback
+from PyQt5.QtCore import QVariant
 
+# Grab the directory of the qgis project and parent folder of the project
 project_directory = os.path.dirname(QgsProject.instance().fileName())
 parent_directory = os.path.dirname(project_directory)
+
+# Set up project log file
 log_file_path = os.path.join(parent_directory, 'qgisdebug.log')
 logging.basicConfig(filename=log_file_path, level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.info("========================================================================")
+
+# Attempt to retrieve the path to the qgis-app and layers folders
+try:
+    scriptDirectory = os.path.join(parent_directory, "qgis-app")
+    folderDirectory = os.path.join(scriptDirectory, "layers")
+except Exception as e:
+    logging.exception("Exception occurred: " + str(e))
 
 # Initialize QGIS
 QgsApplication.setPrefixPath("~/QGIS 3.32.3", True)
@@ -29,153 +44,180 @@ logging.debug("Set up layer tree")
 layers = []
 logging.debug("Layers list")
 
-style = QgsStyle().defaultStyle()
-ramp_names = style.colorRampNames()
-print(ramp_names)
+# Used to create a point layer from csv data
+def createCSVLayers(file_path: str, fields: QgsFields, feats: typing.List[str], headers: typing.List[str], layer: QgsVectorLayer) -> QgsVectorDataProvider:
+    with open(file_path) as f:
+        lines = f.read().splitlines()
+        
+        for line in lines[1:]:
+            values = line.split(',')
+            feat = QgsFeature(fields)
+            feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(float(values[headers.index("LONGITUDE")]), float(values[headers.index("LATITUDE")]))))
+            try:
+                for header, csv_value in zip(headers, values):
+                    feat[header] = csv_value
+            except Exception as e:
+                logging.error(str(e))
+            feats.append(feat)
+    prov.addFeatures(feats)
+    layer.setCrs(QgsCoordinateReferenceSystem('EPSG:4326'))
+    logging.debug("Created prov")
+    return prov
 
-try:
-    scriptDirectory = os.path.join(parent_directory, "qgis-app")
-    folderDirectory = os.path.join(scriptDirectory, "layers")
-except Exception as e:
-    logging.exception("Exception occurred: " + str(e))
+# Used to create heatmap layers from csv heating data
+def createHeatingHeatmapLayers(prov: QgsVectorDataProvider, attributes: typing.List[str]) -> None:
+    
+    heating = QgsLayerTreeGroup()
+    heating.setName("Heating Types")
+    
+    # Create a heatmap layer for each attribute in heating_attributes
+    for attribute_name in attributes:
+        heatmap_layer = QgsVectorLayer("Point?crs=EPSG:4326", f"Heatmap - {attribute_name}", "memory")
+        heatmap_provider = heatmap_layer.dataProvider()
+        
+        color_ramp = QgsStyle().defaultStyle().colorRamp('TransparentBlue')
+        
+        heatmap_renderer = QgsHeatmapRenderer()
+        heatmap_renderer.setWeightExpression('1')
+        heatmap_renderer.setRadius(10)
+        heatmap_renderer.setColorRamp(color_ramp)
+        
+        # Determine if a feature is worth putting on a layer
+        new_feats = []
+        for feat in prov.getFeatures():
+            try:
+                if feat[attribute_name] == "true":
+                    value = 1.0
+                elif feat[attribute_name] == "false":
+                    value = 0.0
+                else:
+                    value = float(feat[attribute_name])
+            except:
+                print(feat[attribute_name])
+            if value > 0:
+                new_feats.append(feat)
+        
+        heatmap_provider.addFeatures(new_feats)
+        heatmap_layer.setRenderer(heatmap_renderer)
+        heatmap_layer.setSubLayerVisibility(attribute_name, False)
+        
+        
+        # Add the heatmap layer to the Layer Tree
+        heating.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(heatmap_layer))
 
+        # Display the heatmap
+        layers.append(heatmap_layer)
+        
+        logging.debug("Added csv as layer")
+
+    heating.updateChildVisibilityMutuallyExclusive()
+    root.insertChildNode(0, QgsLayerTreeLayer(layer))
+    root.insertChildNode(1, heating)
+
+# Used to create heatmap layers from csv demographic data
+def createDemographicHeatmapLayers(attributes: typing.List[str], file_path: str) -> None:
+    demographic = QgsLayerTreeGroup()
+    demographic.setName("Demographic Info")
+    logging.info("Entered function")
+    
+    # Read the CSV file to obtain values for color assignment
+    with open(file_path, newline='') as csvfile:
+        reader = csv.DictReader(csvfile)
+        data = {row['ZCTA']: {attr: row[attr] for attr in attributes} for row in reader}
+        # logging.info(data.items())
+    logging.info("Read file")
+    
+    # Create a heatmap layer for each attribute in heating_attributes
+    for index, attribute_name in enumerate(attributes):
+        heatmap_layer = QgsVectorLayer("Point?crs=EPSG:4326", f"Heatmap - {attribute_name}", "memory")
+        logging.info(f"created new heatmap layer {attribute_name}")
+        
+        for layer in QgsProject.instance().mapLayers().values():
+            if layer.name() == "BaseLayerDB — Zips_in_Metros":
+                heatmap_layer = layer.clone()
+                logging.info("cloned layer")
+                break
+        heatmap_layer.setName(f"Heatmap - {attribute_name}")
+        logging.info(heatmap_layer.name())
+        
+        # Add attributes to the cloned layer
+        with edit(heatmap_layer):
+            for index, feature in enumerate(heatmap_layer.getFeatures()):
+                zip_code = feature.attribute("ZCTA5")
+                if zip_code in data:
+                    value = data[zip_code].get(attribute_name, None)
+                    logging.info(f"value set {value} for zipcode {zip_code}")
+                    if value is not None:
+                        if attribute_name not in heatmap_layer.fields().names():
+                            # logging.info(feature.attributes())
+                            heatmap_layer.addAttribute(QgsField(attribute_name, type=QVariant.String))
+                            # logging.info(heatmap_layer.attributeList())
+                            logging.info("attribute added")
+                        heatmap_layer.getFeature(index+1).setAttribute(attribute_name, value)
+                        logging.info("attribute set")
+        
+        # Add the heatmap layer to the Layer Tree
+        demographic.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(heatmap_layer))
+
+        # Display the heatmap
+        layers.append(heatmap_layer)
+        logging.debug("Added csv as layer")
+
+    demographic.updateChildVisibilityMutuallyExclusive()
+    root.insertChildNode(2, demographic)
+
+# Create layers for each shape file or csv in the layers folder
 for fileName in os.listdir(folderDirectory):
     fullFile = folderDirectory + os.sep + fileName
     path, type = os.path.splitext(fileName)
     
+    # Create a vector layer from shape files
     if fileName.endswith(".shp"):
         layer = QgsVectorLayer(fullFile, fileName, "ogr")
-        # if layer.isValid():
+        
+        # Attempt to add the layer
         try:
-            # Add the layer
             layers.append(layer)
             project.instance().addMapLayer(layer)
         except:
             logging.warning("Layer " + fileName + " failed to load!")
-        logging.debug("Loaded .shp files")
-        
+    
+    # Create vector layers from csv files
     elif fileName.endswith(".csv"):
-        layer = QgsVectorLayer("""Point?crs=EPSG:4326
-                               &field=Address:string
-                               &field=City:string
-                               &field=State/Province:string
-                               &field=Year-Built:string
-                               &field=Zip/Postal:string
-                               &field=Price:string
-                               &field=Square-Feet:string
-                               &field=Latitude:string
-                               &field=Longitude:string
-                               &field=Solar-Heating:string
-                               &field=Furnace:string
-                               &field=Natural-Gas:string
-                               &field=Propane:string
-                               &field=Diesel:string
-                               &field=Heating-Oil:string
-                               &field=Wood/Pellet:string
-                               &field=Electric:string
-                               &field=Heat-Pump:string
-                               &field=Baseboard:string
-                               &field=Swamp-Coolers:string
-                               &field=Radiant-Floor:string""", "locations", "memory")
+        # Store the headers of the csv file
+        with open(fullFile, 'r', newline='') as file:
+            reader = csv.reader(file)
+            headers = next(reader)
+            headers = [header.strip() for header in headers]
+        
+        # Create the csv path (csv_info) and add the csv headers to the path
+        csv_info = "Point?crs=EPSG:4326"
+        for index, header_name in enumerate(headers):
+            headers[index] = header_name
+            csv_info += f"&field={header_name}"
+        
+        layer = QgsVectorLayer(csv_info, "locations", "memory")
         prov = layer.dataProvider()
         fields = prov.fields()
         feats = []
-        with open(fullFile) as f:
-            lines = f.read().splitlines()
-            for line in lines[1:]:
-                address, city, state, year, zipcode, price, sqrft, lat, lon, solar, furnace, ng, propane, diesel, oil, wood, electric, hp, baseboard, sc, rf = line.split(",")
-                feat = QgsFeature(fields)
-                feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(float(lon), float(lat))))
-                feat["Address"] = address
-                feat["City"] = city
-                feat["State/Province"] = state
-                feat["Year-Built"] = year
-                feat["Zip/Postal"] = zipcode
-                feat["Price"] = price
-                feat["Square-Feet"] = sqrft
-                feat["Latitude"] = lat
-                feat["Longitude"] = lon
-                feat["Solar-Heating"] = solar
-                feat["Furnace"] = furnace
-                feat["Natural-Gas"] = ng
-                feat["Propane"] = propane
-                feat["Diesel"] = diesel
-                feat["Heating-Oil"] = oil
-                feat["Wood/Pellet"] = wood
-                feat["Electric"] = electric
-                feat["Heat-Pump"] = hp
-                feat["Baseboard"] = baseboard
-                feat["Swamp-Coolers"] = sc
-                feat["Radiant-Floor"] = rf
-                feats.append(feat)
-        prov.addFeatures(feats)
-        layer.setCrs(QgsCoordinateReferenceSystem('EPSG:4326'))
         
-        logging.debug("Created prov")
-        
-        #  if layer.isValid():
         try:
-            attributes = ["Solar-Heating",
-                          "Furnace",
-                          "Natural-Gas",
-                          "Propane",
-                          "Diesel",
-                          "Heating-Oil",
-                          "Wood/Pellet",
-                          "Electric",
-                          "Heat-Pump",
-                          "Baseboard",
-                          "Swamp-Coolers",
-                          "Radiant-Floor"]
-            
-            for attribute_name in attributes:
-                heatmap_layer = QgsVectorLayer("Point?crs=EPSG:4326", f"Heatmap - {attribute_name}", "memory")
-                heatmap_provider = heatmap_layer.dataProvider()
-                
-                color_ramp = QgsStyle().defaultStyle().colorRamp('Blues')
-                
-                heatmap_renderer = QgsHeatmapRenderer()
-                heatmap_renderer.setWeightExpression('1')
-                heatmap_renderer.setRadius(10)
-                heatmap_renderer.setColorRamp(color_ramp)
-                
-                new_feats = []
-                for feat in prov.getFeatures():
-                    lat = feat['Latitude']
-                    lon = feat['Longitude']
-                    try:
-                        if feat[attribute_name] == "true":
-                            value = 1.0
-                        elif feat[attribute_name] == "false":
-                            value = 0.0
-                        else:
-                            value = float(feat[attribute_name])
-                    except:
-                        print(feat[attribute_name])
-                    
-                    # new_feat = QgsFeature()
-                    # new_feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(float(lon), float(lat))))
-                    if value > 0:
-                        new_feats.append(feat)
-                
-                heatmap_provider.addFeatures(new_feats)
-                heatmap_layer.setRenderer(heatmap_renderer)
-                
-                
-                # Add the heatmap layer to the Layer Tree
-                root = QgsProject.instance().layerTreeRoot()
-                root.insertChildNode(0, QgsLayerTreeLayer(heatmap_layer))
-
-                # Display the heatmap
-                # layer.triggerRepaint()
-                layers.append(heatmap_layer)
-                
-                logging.debug("Added csv as layer")
-            root.insertChildNode(0, QgsLayerTreeLayer(layer))
+            # Extracts desired attribute names from the csv headers
+            attributes = headers
+            if headers.__contains__("LONGITUDE"):
+                prov = createCSVLayers(fullFile, fields, feats, headers, layer)
+                attributes = list(itertools.dropwhile(lambda x : x != "LONGITUDE", headers))
+                attributes.remove("LONGITUDE")
+                createHeatingHeatmapLayers(prov, attributes)
+            elif headers.__contains__("ZCTA"):
+                attributes.remove("GEO_ID")
+                attributes.remove("STATE_FIPS")
+                createDemographicHeatmapLayers(attributes, fullFile)
         except Exception as e:
-            logging.warning("Layer " + fileName + " failed to load!")
-            logging.warning(e)
+            # logging.warning("CSV " + fileName + " failed to load!")
+            logging.error(e)
+            logging.error(traceback.format_exc())
 
 # Run the QGIS application event loop
 qgs.exec_()
-logging.debug("Last one")
+logging.debug("Last one") 
