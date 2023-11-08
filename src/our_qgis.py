@@ -107,7 +107,7 @@ def createHeatingHeatmapLayers(prov: QgsVectorDataProvider, attributes: typing.L
 
         # Display the heatmap
         layers.append(heatmap_layer)
-        logging.debug("Added csv as layer")
+        # logging.debug("Added csv as layer")
 
     heating.updateChildVisibilityMutuallyExclusive()
     root.insertChildNode(0, QgsLayerTreeLayer(layer))
@@ -130,40 +130,49 @@ def createDemographicHeatmapLayers(attributes: typing.List[str], file_path: str)
 
     # Create a heatmap layer for each attribute in heating_attributes
     for index, attribute_name in enumerate(attributes):
-        heatmap_layer = base_layer.clone()
-        heatmap_layer.setName(f"{attribute_name}")
+        if index == 0 or index % 4 == 0:
+            heatmap_layer = base_layer.clone()
+            heatmap_layer.setName(f"{attribute_name}")
+            heatmap_prov = heatmap_layer.dataProvider()
+            heatmap_fields = heatmap_prov.fields()
         
-        createDivisions(data, attribute_name)
-        
-        # Add attributes to the cloned layer
-        with edit(heatmap_layer):
-            
-            for feature in heatmap_layer.getFeatures():
-                zip_code = feature.attribute("ZCTA5")
-                
-                if zip_code in data:
-                    value = data[zip_code].get(attribute_name, None)
-                    
-                    if value is not None and attribute_name not in heatmap_layer.fields().names():
-                        heatmap_layer.addAttribute(QgsField(attribute_name, type = QVariant.String))
-                        field_idx = heatmap_layer.fields().indexOf("Estimate!!SEX AND AGE!!Total population")
-                        
-                        for feat_id in heatmap_layer.selectedFeatureIds():
-                            if feat_id == 27:
-                                heatmap_layer.changeAttributeValue(feat_id, field_idx, value)
-        
-        # Add the heatmap layer to the Layer Tree
-        demographic.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(heatmap_layer))
+            createDivisions(data, attribute_name)
 
-        # Display the heatmap
-        layers.append(heatmap_layer)
-        logging.debug("Added csv as layer")
-        if index > 10:
-            break
+            # Add attributes to the cloned layer
+            with edit(heatmap_layer):
+                for feature in heatmap_layer.getFeatures():
+                    zip_code = feature.attribute("ZCTA5")
+
+                    if zip_code in data and attribute_name not in heatmap_fields.names():
+                        # QgsVectorLayer.getFeatures()
+                        # QgsVectorLayer.allFeatureIds()
+                        # QgsFeature
+                        # QgsVectorLayer.fields().indexOf()
+                        # logging.info(heatmap_layer.fields().names())
+                        # logging.info(heatmap_fields.names())
+                        # # logging.info(heatmap_layer.allFeatureIds())
+                        # QgsVectorLayer.fields()
+                        # QgsVectorLayer.changeAttributeValue()
+                        # QgsVectorLayer.addAttribute(QgsField())
+                            
+                        feat_id = feature.id()
+                        for i in range(0, 4):
+                            heatmap_layer.addAttribute(QgsField(attributes[index+i], QVariant.String))
+                            field_idx = heatmap_layer.fields().indexOf(attributes[index+i])
+                            logging.info(f"{feat_id}, {field_idx}, {attributes[index+i]}, {data[zip_code].get(attributes[index+i], None)}")
+                            heatmap_layer.changeAttributeValue(feat_id, field_idx, data[zip_code].get(attributes[index+i]))
+
+            # Add the heatmap layer to the Layer Tree
+            demographic.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(heatmap_layer))
+
+            # Display the heatmap
+            layers.append(heatmap_layer)
+            logging.debug("Added csv as layer")
+            if index > 40:
+                break
 
     demographic.updateChildVisibilityMutuallyExclusive()
     root.insertChildNode(2, demographic)
-
 
 # Used to create divisions using the median of the data from the csv for each attribute
 def createDivisions(data, attribute_name: str):
@@ -178,13 +187,17 @@ def createDivisions(data, attribute_name: str):
     
     for zip in data:
         value = data[zip].get(attribute_name, None)
+        # logging.info(value)
         try:
             adjusted_value = float(value)
         except Exception as e:
             logging.warning(f"value is not a number: {e}")
             adjusted_value = 0
-        if adjusted_value >= 0:
-            values_whole.append(adjusted_value)
+        values_whole.append(adjusted_value)
+        if all(x < 0 for x in values_whole):
+            return None
+        else:
+            values_whole = [0 if i < 0 else i for i in values_whole]
         
     max_value = max(values_whole)
     min_value = min(values_whole)
@@ -204,11 +217,13 @@ def createDivisions(data, attribute_name: str):
     return divisions
    
 # Used to create the gradient to assign each zip code based on the attribute value
-def colorAssignment(divisions: typing.List(float)):
+def colorAssignment(divisions: typing.List[float]):
     colors = []
     
+    # for val in divisions:
+    #     translate(val, 0, 255, )
     
-    
+# Used to map a value from one scale into another scale
 def translate(value, leftMin, leftMax, rightMin, rightMax):
     # Figure out how 'wide' each range is
     leftSpan = leftMax - leftMin
@@ -219,9 +234,6 @@ def translate(value, leftMin, leftMax, rightMin, rightMax):
 
     # Convert the 0-1 range into a value in the right range.
     return rightMin + (valueScaled * rightSpan)
-    
-    
-            
 
 # Create layers for each shape file or csv in the layers folder
 for fileName in os.listdir(folderDirectory):
