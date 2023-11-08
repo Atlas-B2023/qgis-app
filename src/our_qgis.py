@@ -144,23 +144,13 @@ def createDemographicHeatmapLayers(attributes: typing.List[str], file_path: str)
                     zip_code = feature.attribute("ZCTA5")
 
                     if zip_code in data and attribute_name not in heatmap_fields.names():
-                        # QgsVectorLayer.getFeatures()
-                        # QgsVectorLayer.allFeatureIds()
-                        # QgsFeature
-                        # QgsVectorLayer.fields().indexOf()
-                        # logging.info(heatmap_layer.fields().names())
-                        # logging.info(heatmap_fields.names())
-                        # # logging.info(heatmap_layer.allFeatureIds())
-                        # QgsVectorLayer.fields()
-                        # QgsVectorLayer.changeAttributeValue()
-                        # QgsVectorLayer.addAttribute(QgsField())
-                            
                         feat_id = feature.id()
                         for i in range(0, 4):
+                            # heatmap_fields.append(QgsField(attributes[index+i], QVariant.String, ))
                             heatmap_layer.addAttribute(QgsField(attributes[index+i], QVariant.String))
                             field_idx = heatmap_layer.fields().indexOf(attributes[index+i])
                             logging.info(f"{feat_id}, {field_idx}, {attributes[index+i]}, {data[zip_code].get(attributes[index+i], None)}")
-                            heatmap_layer.changeAttributeValue(feat_id, field_idx, data[zip_code].get(attributes[index+i]))
+                            heatmap_layer.changeAttributeValue(feat_id, field_idx, data[zip_code].get(attributes[index+i]).strip())
 
             # Add the heatmap layer to the Layer Tree
             demographic.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(heatmap_layer))
@@ -279,8 +269,8 @@ for fileName in os.listdir(folderDirectory):
                 attributes.remove("LONGITUDE")
                 createHeatingHeatmapLayers(prov, attributes)
             elif headers.__contains__("ZCTA"):
-                attributes.remove("GEOID")
-                attributes.remove("STATEFIPS")
+                attributes.remove("GEO_ID")
+                attributes.remove("STATE_FIPS")
                 createDemographicHeatmapLayers(attributes, fullFile)
         except Exception as e:
             # logging.warning("CSV " + fileName + " failed to load!")
