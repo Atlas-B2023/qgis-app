@@ -127,7 +127,7 @@ def createDemographicHeatmapLayers(attributes: typing.List[str], file_path: str)
         if layer.name() == "BaseLayerDB — Zips_in_Metros":
             base_layer = layer.clone()
             break
-
+    
     # Create a heatmap layer for each attribute in heating_attributes
     for index, attribute_name in enumerate(attributes):
         if index == 0 or index % 4 == 0:
@@ -135,22 +135,42 @@ def createDemographicHeatmapLayers(attributes: typing.List[str], file_path: str)
             heatmap_layer.setName(f"{attribute_name}")
             heatmap_prov = heatmap_layer.dataProvider()
             heatmap_fields = heatmap_prov.fields()
-        
-            createDivisions(data, attribute_name)
+            
+            # modified_features = []
 
-            # Add attributes to the cloned layer
             with edit(heatmap_layer):
                 for feature in heatmap_layer.getFeatures():
+                    j = 0
                     zip_code = feature.attribute("ZCTA5")
 
-                    if zip_code in data and attribute_name not in heatmap_fields.names():
+                    if (zip_code in data.keys()) and (attribute_name not in heatmap_fields.names()):
                         feat_id = feature.id()
+                        new_feat = heatmap_layer.getFeature(feat_id)
+                        features_size = new_feat.fields().size()
+
+                        if (features_size == 27):
+                            new_feat.resizeAttributes(features_size + 4)
+
                         for i in range(0, 4):
-                            # heatmap_fields.append(QgsField(attributes[index+i], QVariant.String, ))
                             heatmap_layer.addAttribute(QgsField(attributes[index+i], QVariant.String))
-                            field_idx = heatmap_layer.fields().indexOf(attributes[index+i])
-                            logging.info(f"{feat_id}, {field_idx}, {attributes[index+i]}, {data[zip_code].get(attributes[index+i], None)}")
-                            heatmap_layer.changeAttributeValue(feat_id, field_idx, data[zip_code].get(attributes[index+i]).strip())
+                            new_feat.fields().append(QgsField(attributes[index+i], QVariant.String), originIndex = features_size+i)
+                            field_idx = new_feat.fields().indexOf(attributes[index+i])
+                            value = data[zip_code].get(attributes[index+i]).strip()
+
+                            if field_idx == -1 and j == 0 and features_size == 27:
+                                new_feat.setAttribute(features_size+i, value)
+                                # logging.info(f"{feat_id}, {field_idx}, {features_size+i}, {attributes[index+i]}, {value}, {new_feat.attribute(features_size+i)}")
+                            elif field_idx == -1 and j == 0 and not features_size == 27:
+                                new_feat.setAttribute(features_size+i-4, value)
+                                # logging.info(f"{feat_id}, {field_idx}, {features_size+i-4}, {attributes[index+i]}, {value}, {new_feat.attribute(features_size+i-4)}")
+                            else:
+                                new_feat.setAttribute(field_idx, value)
+                                # logging.info(f"{feat_id}, {field_idx}, {features_size+i}, {attributes[index+i]}, {value}, {new_feat.attribute(field_idx)}")
+
+                        # modified_features.append(new_feat)
+                        # heatmap_layer.deleteFeature(feat_id)
+                        heatmap_layer.addFeature(new_feat)
+                    j += 1
 
             # Add the heatmap layer to the Layer Tree
             demographic.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(heatmap_layer))
@@ -158,7 +178,7 @@ def createDemographicHeatmapLayers(attributes: typing.List[str], file_path: str)
             # Display the heatmap
             layers.append(heatmap_layer)
             logging.debug("Added csv as layer")
-            if index > 40:
+            if index > 4:
                 break
 
     demographic.updateChildVisibilityMutuallyExclusive()
