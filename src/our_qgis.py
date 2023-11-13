@@ -131,53 +131,64 @@ def createDemographicHeatmapLayers(attributes: typing.List[str], file_path: str)
     # Create a heatmap layer for each attribute in heating_attributes
     for index, attribute_name in enumerate(attributes):
         if index == 0 or index % 4 == 0:
-            heatmap_layer = base_layer.clone()
-            heatmap_layer.setName(f"{attribute_name}")
+            heatmap_layer = QgsVectorLayer("MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory")
             heatmap_prov = heatmap_layer.dataProvider()
+            original_fields = base_layer.fields()
+            heatmap_prov.addAttributes(original_fields.toList())
+            
+            heatmap_layer.triggerRepaint()
             heatmap_fields = heatmap_prov.fields()
             
-            # modified_features = []
+            heatmap_layer.startEditing() # Acts as with edit(heatmap_layer), as that method does not work
+            for ftr in base_layer.getFeatures():
+                new_ftr = QgsFeature()
+                new_ftr.setGeometry(ftr.geometry())
+                new_ftr.setAttributes(ftr.attributes())
+                heatmap_layer.addFeature(new_ftr)
+            heatmap_layer.loadNamedStyle(base_layer.styleURI())
+            heatmap_layer.styleManager().copyStylesFrom(base_layer.styleManager())
 
-            with edit(heatmap_layer):
-                for feature in heatmap_layer.getFeatures():
-                    j = 0
-                    zip_code = feature.attribute("ZCTA5")
-
-                    if (zip_code in data.keys()) and (attribute_name not in heatmap_fields.names()):
-                        feat_id = feature.id()
-                        new_feat = heatmap_layer.getFeature(feat_id)
+            
+            heatmap_layer.startEditing() # Acts as with edit(heatmap_layer), as that method does not work
+            heatmap_layer.deleteAttributes([27, 28, 29, 30])
+            
+            for feature in heatmap_layer.getFeatures():
+                zip_code = feature.attribute("ZCTA5")
+                
+                if (zip_code in data.keys()) and (attribute_name not in heatmap_fields.names()):
+                    feat_id = feature.id()
+                    new_feat = heatmap_layer.getFeature(feat_id)
+                    features_size = new_feat.fields().size()
+                    
+                    if (features_size == 27):
+                        new_feat.resizeAttributes(31)
                         features_size = new_feat.fields().size()
+                    
+                    for i in range(0, 4):
+                        heatmap_layer.addAttribute(QgsField(attributes[index+i], QVariant.String))
+                        new_feat.fields().append(QgsField(attributes[index+i], QVariant.String), originIndex = features_size+i)
+                        field_idx = new_feat.fields().indexOf(attributes[index+i])
+                        value = data[zip_code].get(attributes[index+i]).strip()
+                        
+                        if field_idx == -1 and features_size == 27:
+                            new_feat.setAttribute(features_size+i, value)
+                            # logging.info(f"first, {feat_id}, {field_idx}, {features_size+i}, {attributes[index+i]}, {value}, {new_feat.attribute(features_size+i)}")
+                        elif field_idx == -1 and not features_size == 27:
+                            new_feat.setAttribute(features_size+i-4, value)
+                            # logging.info(f"second, {feat_id}, {field_idx}, {features_size+i-4}, {attributes[index+i]}, {value}, {new_feat.attribute(features_size+i-4)}")
+                        else:
+                            new_feat.setAttribute(field_idx, value)
+                            # logging.info(f"third, {feat_id}, {field_idx}, {features_size+i}, {attributes[index+i]}, {value}, {new_feat.attribute(field_idx)}")
+                    heatmap_layer.updateFeature(new_feat)
 
-                        if (features_size == 27):
-                            new_feat.resizeAttributes(features_size + 4)
-
-                        for i in range(0, 4):
-                            heatmap_layer.addAttribute(QgsField(attributes[index+i], QVariant.String))
-                            new_feat.fields().append(QgsField(attributes[index+i], QVariant.String), originIndex = features_size+i)
-                            field_idx = new_feat.fields().indexOf(attributes[index+i])
-                            value = data[zip_code].get(attributes[index+i]).strip()
-
-                            if field_idx == -1 and j == 0 and features_size == 27:
-                                new_feat.setAttribute(features_size+i, value)
-                                # logging.info(f"{feat_id}, {field_idx}, {features_size+i}, {attributes[index+i]}, {value}, {new_feat.attribute(features_size+i)}")
-                            elif field_idx == -1 and j == 0 and not features_size == 27:
-                                new_feat.setAttribute(features_size+i-4, value)
-                                # logging.info(f"{feat_id}, {field_idx}, {features_size+i-4}, {attributes[index+i]}, {value}, {new_feat.attribute(features_size+i-4)}")
-                            else:
-                                new_feat.setAttribute(field_idx, value)
-                                # logging.info(f"{feat_id}, {field_idx}, {features_size+i}, {attributes[index+i]}, {value}, {new_feat.attribute(field_idx)}")
-
-                        # modified_features.append(new_feat)
-                        # heatmap_layer.deleteFeature(feat_id)
-                        heatmap_layer.addFeature(new_feat)
-                    j += 1
-
-            # Add the heatmap layer to the Layer Tree
+            # Add the layer to the Layer Tree
             demographic.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(heatmap_layer))
 
-            # Display the heatmap
+            # Display the layer
             layers.append(heatmap_layer)
             logging.debug("Added csv as layer")
+            
+            # Used to limit number of layers generated for testing
             if index > 4:
                 break
 
