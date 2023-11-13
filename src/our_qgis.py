@@ -179,8 +179,28 @@ def createDemographicHeatmapLayers(attributes: typing.List[str], file_path: str)
                         else:
                             new_feat.setAttribute(field_idx, value)
                             # logging.info(f"third, {feat_id}, {field_idx}, {features_size+i}, {attributes[index+i]}, {value}, {new_feat.attribute(field_idx)}")
+                    
                     heatmap_layer.updateFeature(new_feat)
 
+            renderer = QgsCategorizedSymbolRenderer(attributes[index])
+            unique_values = heatmap_layer.uniqueValues(heatmap_layer.fields().indexOf(attributes[index]))
+            unique_max = max(unique_values)
+            unique_min = min(unique_values)
+            color_ramp = QgsGradientColorRamp(QColor(0,0,0), QColor(0,0,255))
+            # color_ramp = QgsRandomColorRamp()
+            
+            for value in unique_values:
+                logging.info(value)
+                if value is not None:
+                    symbol = QgsSymbol.defaultSymbol(heatmap_layer.geometryType())
+                    layer = symbol.symbolLayer(0)
+                    layer.setColor(color_ramp.color(translate(float(value), 0, 255, unique_min, unique_max)))
+                
+                    category = QgsRendererCategory(float(value), symbol, str(value))
+                    renderer.addCategory(category)
+                
+            heatmap_layer.setRenderer(renderer)
+            
             # Add the layer to the Layer Tree
             demographic.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(heatmap_layer))
 
@@ -245,16 +265,16 @@ def colorAssignment(divisions: typing.List[float]):
     #     translate(val, 0, 255, )
     
 # Used to map a value from one scale into another scale
-def translate(value, leftMin, leftMax, rightMin, rightMax):
+def translate(value, toMin, toMax, fromMin, fromMax):
     # Figure out how 'wide' each range is
-    leftSpan = leftMax - leftMin
-    rightSpan = rightMax - rightMin
+    toSpan = toMax - toMin
+    fromSpan = fromMax - fromMin
 
     # Convert the left range into a 0-1 range (float)
-    valueScaled = float(value - leftMin) / float(leftSpan)
+    valueScaled = float(value - toMin) / float(toSpan)
 
     # Convert the 0-1 range into a value in the right range.
-    return rightMin + (valueScaled * rightSpan)
+    return fromMin + (valueScaled * fromSpan)
 
 # Create layers for each shape file or csv in the layers folder
 for fileName in os.listdir(folderDirectory):
