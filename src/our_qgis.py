@@ -134,8 +134,8 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
             base_layer = layer.clone()
             break
     
-    # for attribute_name in attributes:
-    #     logging.info(attribute_name)
+    for attribute_name in attributes:
+        logging.info(attribute_name)
         
     # Create a layer for each attribute in heating_attributes
     for index, attribute_name in enumerate(attributes):
@@ -174,6 +174,8 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                         features_size = new_feat.fields().size()
                     
                     for i in range(0, 4):
+                        if attributes[index+i] == "ZCTA":
+                            break
                         demo_layer.addAttribute(QgsField(attributes[index+i], QVariant.String))
                         new_feat.fields().append(QgsField(attributes[index+i], QVariant.String), originIndex = features_size+i)
                         field_idx = new_feat.fields().indexOf(attributes[index+i])
