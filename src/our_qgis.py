@@ -75,20 +75,15 @@ def createHeatingHeatmapLayers(prov: QgsVectorDataProvider, attributes: typing.L
         check = False
         if len(heating_layers.children()) == 0:
             heatmap_layer = QgsVectorLayer("Point?crs=EPSG:4326", f"Heatmap - {attribute_name}", "memory")
-            logging.info("was 0")
             check = False
         else:
             for child_node in heating_layers.children():
-                logging.info(f"{attribute_name = }, {child_node.name() = }")
-                # logging.info(child_node.name() == f"Heatmap - {attribute_name}")
                 if child_node.name() == f"Heatmap - {attribute_name}":
                     heatmap_layer = child_node.layer()
-                    logging.info("exists")
                     check = True
                     break
                 else:
                     heatmap_layer = QgsVectorLayer("Point?crs=EPSG:4326", f"Heatmap - {attribute_name}", "memory")
-                    logging.info("does not exist")
                     check = False
         
         heatmap_provider = heatmap_layer.dataProvider()
@@ -139,6 +134,9 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
             base_layer = layer.clone()
             break
     
+    # for attribute_name in attributes:
+    #     logging.info(attribute_name)
+        
     # Create a layer for each attribute in heating_attributes
     for index, attribute_name in enumerate(attributes):
         if index == 0 or index % 4 == 0:
@@ -193,26 +191,31 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                     
                     demo_layer.updateFeature(new_feat)
 
-            renderer = QgsCategorizedSymbolRenderer(attributes[index])
-            unique_values = demo_layer.uniqueValues(demo_layer.fields().indexOf(attributes[index]))
-            new_uniques = []
-            for value in unique_values:
-                if value is not None:
-                    if value.isnumeric():
-                        new_uniques.append(float(value))
-            unique_max = max(new_uniques)
-            unique_min = min(new_uniques)
-            color_ramp = QgsGradientColorRamp(QColor(255,255,255,160), QColor(0,0,255,160))
             
-            for value in new_uniques:
-                symbol = QgsSymbol.defaultSymbol(demo_layer.geometryType())
-                layer = symbol.symbolLayer(0)
-                translated_val = translate(value, unique_min, unique_max, 0, 1)
-                # logging.info(f"{unique_min = }, {unique_max = }, {value = }, {translated_val = }")
-                layer.setColor(color_ramp.color(translated_val))
-                category = QgsRendererCategory(value, symbol, str(value))
-                renderer.addCategory(category)
-            demo_layer.setRenderer(renderer)
+            try:
+                renderer = QgsCategorizedSymbolRenderer(attributes[index])
+                unique_values = demo_layer.uniqueValues(demo_layer.fields().indexOf(attributes[index]))
+                new_uniques = []
+                for value in unique_values:
+                    if value is not None:
+                        if value.isnumeric():
+                            logging.info(value)
+                            new_uniques.append(float(value))
+                unique_max = max(new_uniques)
+                unique_min = min(new_uniques)
+                color_ramp = QgsGradientColorRamp(QColor(255,255,255,160), QColor(0,0,255,160))
+
+                for value in new_uniques:
+                    symbol = QgsSymbol.defaultSymbol(demo_layer.geometryType())
+                    layer = symbol.symbolLayer(0)
+                    translated_val = translate(value, unique_min, unique_max, 0, 1)
+                    # logging.info(f"{unique_min = }, {unique_max = }, {value = }, {translated_val = }")
+                    layer.setColor(color_ramp.color(translated_val))
+                    category = QgsRendererCategory(value, symbol, str(value))
+                    renderer.addCategory(category)
+                demo_layer.setRenderer(renderer)
+            except Exception as e:
+                logging.error(traceback.format_exc())
             
             # Add the layer to the Layer Tree
             demographic.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer))
@@ -221,8 +224,8 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
             layers.append(demo_layer)
             
             # Used to limit number of layers generated for testing
-            if index > 4:
-                break
+            # if index > 4:
+            #     break
     
 # Used to map a value from one scale into another scale
 def translate(value, fromMin, fromMax, toMin, toMax):
@@ -230,8 +233,6 @@ def translate(value, fromMin, fromMax, toMin, toMax):
     toSpan = toMax - toMin
     valueScaled = float(value - fromMin) / float(fromSpan)
     return toMin + (valueScaled * toSpan)
-
-
 
 # Create layer groups for heating information and demographic information
 heating_layers = QgsLayerTreeGroup("Heating Types")
@@ -264,7 +265,7 @@ for fileName in os.listdir(folderDirectory):
         # Create the csv path (csv_info) and add the csv headers to the path
         csv_info = "Point?crs=EPSG:4326"
         for index, header_name in enumerate(headers):
-            headers[index] = header_name
+            # headers[index] = header_name
             csv_info += f"&field={header_name}"
         
         layer = QgsVectorLayer(csv_info, "locations", "memory")
