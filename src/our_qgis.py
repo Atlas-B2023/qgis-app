@@ -1,15 +1,19 @@
 from qgis.core import *
 from qgis.gui import *
 from qgis.utils import *
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QVariant
 from qgis.PyQt.QtGui import QColor
 import logging
 import csv
 import typing
 import itertools
 import traceback
-from PyQt5.QtCore import QVariant
 import statistics
+import math
+import importlib.util
+import sys
+
+qgis = importlib.util.spec_from_file_location("qgis", "C:\Program Files\QGIS 3.34.0\apps\qgis\python\qgis")
 
 # Grab the directory of the qgis project and parent folder of the project
 project_directory = os.path.dirname(QgsProject.instance().fileName())
@@ -134,8 +138,8 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
             base_layer = layer.clone()
             break
     
-    for attribute_name in attributes:
-        logging.info(attribute_name)
+    # for attribute_name in attributes:
+        # logging.info(attribute_name)
         
     # Create a layer for each attribute in heating_attributes
     for index, attribute_name in enumerate(attributes):
@@ -195,18 +199,100 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
 
             
             try:
-                renderer = QgsCategorizedSymbolRenderer(attributes[index])
-                unique_values = demo_layer.uniqueValues(demo_layer.fields().indexOf(attributes[index]))
+                unique_values = demo_layer.uniqueValues(demo_layer.fields().indexOf(attribute_name))
                 new_uniques = []
                 for value in unique_values:
                     if value is not None:
-                        if value.isnumeric():
-                            logging.info(value)
-                            new_uniques.append(float(value))
+                        try:
+                            formatted_val = float(value)
+                            if formatted_val < 0.0:
+                                continue
+                            else:
+                                new_uniques.append(formatted_val)
+                        except:
+                            continue
                 unique_max = max(new_uniques)
                 unique_min = min(new_uniques)
+                logging.info(f"{attribute_name = }, {unique_max = }, {unique_min = }")
                 color_ramp = QgsGradientColorRamp(QColor(255,255,255,160), QColor(0,0,255,160))
-
+                
+                try:
+                    num_divisions = 15
+                    divisions = []
+                    if unique_min == 0.0:
+                        adjusted_min = 0.0
+                    else:
+                        adjusted_min = 10 ** math.ceil(math.log10(unique_min))
+                    adjusted_max = 10 ** math.ceil(math.log10(unique_max))
+                    divisions_range = adjusted_max - adjusted_min
+                    divisions_step = divisions_range/num_divisions
+                    logging.info(f"{adjusted_min = }, {adjusted_max = }, {divisions_range = }, {divisions_step = }")
+                    i = 0
+                    while i < num_divisions:
+                        divisions.append(adjusted_min + (divisions_step * i))
+                        i+=1
+                except Exception as e:
+                    logging.error(e)
+                    logging.error(traceback.format_exc())
+                
+                logging.info(divisions)
+                
+                try:
+                    geom_type = demo_layer.geometryType()
+                    logging.info(f"{geom_type = }")
+                    symbol = QgsSymbol.defaultSymbol(geom_type)
+                    logging.info(f"created symbol 1 {symbol = }")
+                    
+                    render_ranges = list()
+                    
+                    logging.info(f"created symbol 2 {symbol = }")
+                    j = 0
+                    logging.info(f"{j < len(divisions)-1 = }")
+                    while j < len(divisions)-1:
+                        logging.info(f"{attribute_name = }, {len(divisions) = }, {j = }, {divisions[j] = }, {divisions[j+1] = }, {len(render_ranges) = }")
+                        label = "test"
+                        renderer_range = QgsRendererRange(divisions[j], divisions[j+1], symbol, label)
+                        render_ranges.append(renderer_range)
+                        j += 1
+                    renderer = QgsGraduatedSymbolRenderer(attribute_name, render_ranges)
+                    logging.info(f"created symbol 3 {symbol = }")
+                    renderer.updateColorRamp(color_ramp)
+                    logging.info(f"created symbol 4 {symbol = }")
+                    demo_layer.setRenderer(renderer)
+                    logging.info(f"created symbol 5 {symbol = }")
+                    logging.info(f"created symbol 6 {symbol = }")
+                except Exception as e:
+                    logging.info("hello")
+                    logging.error(e)
+                    logging.error(traceback.format_exc())
+                
+                # for feature in demo_layer.getFeatures():
+                #     attribute_val = feature.attribute(attribute_name)
+                #     if attribute_val is not None:
+                #         try:
+                #             formatted_attr = float(value)
+                #             if formatted_attr < 0:
+                #                 continue
+                            
+                #             for i, value in enumerate(divisions):
+                #                 if formatted_attr < value:
+                                    
+                                    
+                #                     # layer = symbol.symbolLayer(0)
+                #                     # translated_val = translate(divisions[i-1], adjusted_min, adjusted_max, 0, 1)
+                #                     # logging.info(f"{unique_min = }, {unique_max = }, {value = }, {translated_val = }")
+                #                     # layer.setColor(color_ramp.color(translated_val))
+                #                     # feature.setSymbol()
+                #                     # category = QgsRendererCategory(divisions[i-1], symbol, f" > {divisions[i-1]}")
+                #                     # renderer = QgsGraduatedSymbolRenderer(attribute_name, ranges)
+                #                     # renderer.addCategory(category)
+                #                     # renderer.updateColorRamp(color_ramp)
+                #                     # demo_layer.setRenderer(renderer)
+                #         except Exception as e:
+                #             logging.error(traceback.format_exc())
+                #             continue
+                
+                renderer = QgsCategorizedSymbolRenderer(attribute_name)
                 for value in new_uniques:
                     symbol = QgsSymbol.defaultSymbol(demo_layer.geometryType())
                     layer = symbol.symbolLayer(0)
@@ -217,6 +303,7 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                     renderer.addCategory(category)
                 demo_layer.setRenderer(renderer)
             except Exception as e:
+                logging.error(e)
                 logging.error(traceback.format_exc())
             
             # Add the layer to the Layer Tree
@@ -226,9 +313,16 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
             layers.append(demo_layer)
             
             # Used to limit number of layers generated for testing
-            # if index > 4:
-            #     break
+            if index > 20:
+                break
     
+    
+def something():
+    logging.info("this")
+    thing = []
+    logging.info(thing)
+    return thing
+        
 # Used to map a value from one scale into another scale
 def translate(value, fromMin, fromMax, toMin, toMax):
     fromSpan = fromMax - fromMin
