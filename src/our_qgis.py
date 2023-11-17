@@ -13,7 +13,7 @@ import math
 import importlib.util
 import sys
 
-qgis = importlib.util.spec_from_file_location("qgis", "C:\Program Files\QGIS 3.34.0\apps\qgis\python\qgis")
+# qgis = importlib.util.spec_from_file_location("qgis", "C:\Program Files\QGIS 3.34.0\apps\qgis\python\qgis")
 
 # Grab the directory of the qgis project and parent folder of the project
 project_directory = os.path.dirname(QgsProject.instance().fileName())
@@ -196,7 +196,6 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                             # logging.info(f"third, {feat_id}, {field_idx}, {features_size+i}, {attributes[index+i]}, {value}, {new_feat.attribute(field_idx)}")
                     
                     demo_layer.updateFeature(new_feat)
-
             
             try:
                 unique_values = demo_layer.uniqueValues(demo_layer.fields().indexOf(attribute_name))
@@ -216,81 +215,82 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                 logging.info(f"{attribute_name = }, {unique_max = }, {unique_min = }")
                 color_ramp = QgsGradientColorRamp(QColor(255,255,255,160), QColor(0,0,255,160))
                 
-                try:
-                    num_divisions = 15
-                    divisions = []
-                    if unique_min == 0.0:
-                        adjusted_min = 0.0
-                    else:
-                        adjusted_min = 10 ** math.ceil(math.log10(unique_min))
-                    adjusted_max = 10 ** math.ceil(math.log10(unique_max))
-                    divisions_range = adjusted_max - adjusted_min
-                    divisions_step = divisions_range/num_divisions
-                    logging.info(f"{adjusted_min = }, {adjusted_max = }, {divisions_range = }, {divisions_step = }")
-                    i = 0
-                    while i < num_divisions:
-                        divisions.append(adjusted_min + (divisions_step * i))
-                        i+=1
-                except Exception as e:
-                    logging.error(e)
-                    logging.error(traceback.format_exc())
+                # try:
+                #     num_divisions = 15
+                #     divisions = []
+                #     if unique_min == 0.0:
+                #         adjusted_min = 0.0
+                #     else:
+                #         adjusted_min = 10 ** math.ceil(math.log10(unique_min))
+                #     adjusted_max = 10 ** math.ceil(math.log10(unique_max))
+                #     divisions_range = adjusted_max - adjusted_min
+                #     divisions_step = divisions_range/num_divisions
+                #     logging.info(f"{adjusted_min = }, {adjusted_max = }, {divisions_range = }, {divisions_step = }")
+                #     i = 0
+                #     while i < num_divisions:
+                #         divisions.append(adjusted_min + (divisions_step * i))
+                #         i+=1
+                # except Exception as e:
+                #     logging.error(e)
+                #     logging.error(traceback.format_exc())
                 
-                logging.info(divisions)
-                
-                try:
-                    geom_type = demo_layer.geometryType()
-                    logging.info(f"{geom_type = }")
-                    symbol = QgsSymbol.defaultSymbol(geom_type)
-                    logging.info(f"created symbol 1 {symbol = }")
-                    
-                    render_ranges = list()
-                    
-                    logging.info(f"created symbol 2 {symbol = }")
-                    j = 0
-                    logging.info(f"{j < len(divisions)-1 = }")
-                    while j < len(divisions)-1:
-                        logging.info(f"{attribute_name = }, {len(divisions) = }, {j = }, {divisions[j] = }, {divisions[j+1] = }, {len(render_ranges) = }")
-                        label = "test"
-                        renderer_range = QgsRendererRange(divisions[j], divisions[j+1], symbol, label)
-                        render_ranges.append(renderer_range)
-                        j += 1
-                    renderer = QgsGraduatedSymbolRenderer(attribute_name, render_ranges)
-                    logging.info(f"created symbol 3 {symbol = }")
-                    renderer.updateColorRamp(color_ramp)
-                    logging.info(f"created symbol 4 {symbol = }")
-                    demo_layer.setRenderer(renderer)
-                    logging.info(f"created symbol 5 {symbol = }")
-                    logging.info(f"created symbol 6 {symbol = }")
-                except Exception as e:
-                    logging.info("hello")
-                    logging.error(e)
-                    logging.error(traceback.format_exc())
-                
-                # for feature in demo_layer.getFeatures():
-                #     attribute_val = feature.attribute(attribute_name)
-                #     if attribute_val is not None:
-                #         try:
-                #             formatted_attr = float(value)
-                #             if formatted_attr < 0:
-                #                 continue
-                            
-                #             for i, value in enumerate(divisions):
-                #                 if formatted_attr < value:
-                                    
-                                    
-                #                     # layer = symbol.symbolLayer(0)
-                #                     # translated_val = translate(divisions[i-1], adjusted_min, adjusted_max, 0, 1)
-                #                     # logging.info(f"{unique_min = }, {unique_max = }, {value = }, {translated_val = }")
-                #                     # layer.setColor(color_ramp.color(translated_val))
-                #                     # feature.setSymbol()
-                #                     # category = QgsRendererCategory(divisions[i-1], symbol, f" > {divisions[i-1]}")
-                #                     # renderer = QgsGraduatedSymbolRenderer(attribute_name, ranges)
-                #                     # renderer.addCategory(category)
-                #                     # renderer.updateColorRamp(color_ramp)
-                #                     # demo_layer.setRenderer(renderer)
-                #         except Exception as e:
-                #             logging.error(traceback.format_exc())
-                #             continue
+                # logging.info(divisions)
+                # # render_ranges = []
+                # # logging.info("here")
+                # try:
+                #     geom_type = demo_layer.geometryType()
+                #     # logging.info(demo_layer.geometryType())
+                #     # logging.info(demo_layer.getFeature(22383).isValid())
+                #     # logging.info(demo_layer.getFeature(22383).attributes())
+                #     # logging.info(demo_layer.getFeature(22383).geometry().type())
+                #     # logging.info(demo_layer.getFeature(22383).embeddedSymbol())
+                #     # geom_type = Qgis.GeometryType("MultiPolygon")
+                #     logging.info(f"{geom_type = }")
+                #     symbol = QgsSymbol.defaultSymbol(geom_type)
+                #     logging.info(f"created symbol 1 {symbol = }")
+                #     logging.info(f"{index = }")
+                #     if index == 0:
+                #         renderer_ranges = {f"{index}": []}
+                #         logging.info(f"created symbol 2 {symbol = }")
+                #         j = 0
+                #         logging.info(f"{j < len(divisions)-1 = }")
+                #         while j < len(divisions)-1:
+                #             logging.info(f"{index = }")
+                #             logging.info(f"{attribute_name = }, {len(divisions) = }, {j = }, {divisions[j] = }, {divisions[j+1] = }, {len(renderer_ranges.get(f'{index}')) = }")
+                #             label = "test"
+                #             renderer_range = QgsRendererRange(divisions[j], divisions[j+1], symbol, label)
+                #             renderer_ranges[f"{index}"].append(renderer_range)
+                #             j += 1
+                #         renderer = QgsGraduatedSymbolRenderer(attribute_name, renderer_ranges.get(f"{index}"))
+                #         logging.info(f"created symbol 3 {symbol = }")
+                #         renderer.updateColorRamp(color_ramp)
+                #         logging.info(f"created symbol 4 {symbol = }")
+                #         demo_layer.setRenderer(renderer)
+                #         logging.info(f"created symbol 5 {symbol = }")
+                #         logging.info(f"created symbol 6 {symbol = }")
+                #     elif index == 4:
+                #         renderer_ranges2 = {f"{index}": []}
+                #         logging.info(f"created symbol 2 {symbol = }")
+                #         j = 0
+                #         logging.info(f"{j < len(divisions)-1 = }")
+                #         while j < len(divisions)-1:
+                #             logging.info(f"{index = }")
+                #             logging.info(f"{attribute_name = }, {len(divisions) = }, {j = }, {divisions[j] = }, {divisions[j+1] = }, {len(renderer_ranges2.get(f'{index}')) = }")
+                #             label = "test"
+                #             renderer_range = QgsRendererRange(divisions[j], divisions[j+1], symbol, label)
+                #             renderer_ranges2[f"{index}"].append(renderer_range)
+                #             j += 1
+                #         renderer = QgsGraduatedSymbolRenderer(attribute_name, renderer_ranges2.get(f"{index}"))
+                #         logging.info(f"created symbol 3 {symbol = }")
+                #         renderer.updateColorRamp(color_ramp)
+                #         logging.info(f"created symbol 4 {symbol = }")
+                #         demo_layer.setRenderer(renderer)
+                #         logging.info(f"created symbol 5 {symbol = }")
+                #         logging.info(f"created symbol 6 {symbol = }")
+                # except Exception as e:
+                #     logging.info("hello")
+                #     logging.error(e)
+                #     logging.error(traceback.format_exc())
                 
                 renderer = QgsCategorizedSymbolRenderer(attribute_name)
                 for value in new_uniques:
@@ -306,22 +306,20 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                 logging.error(e)
                 logging.error(traceback.format_exc())
             
+            # logging.info("nick")
+            
             # Add the layer to the Layer Tree
             demographic.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer))
-
+            # logging.info("knack")
+            
             # Display the layer
             layers.append(demo_layer)
-            
+            # logging.info("Paddy-whack")
+            # logging.info(index)
             # Used to limit number of layers generated for testing
-            if index > 20:
-                break
-    
-    
-def something():
-    logging.info("this")
-    thing = []
-    logging.info(thing)
-    return thing
+        if index == 4:
+            logging.info(index)
+            break
         
 # Used to map a value from one scale into another scale
 def translate(value, fromMin, fromMax, toMin, toMax):
@@ -385,6 +383,7 @@ for fileName in os.listdir(folderDirectory):
             logging.error(e)
             logging.error(traceback.format_exc())
 
+logging.info("there")
 root.insertChildNode(0, QgsLayerTreeLayer(layer))
 heating_layers.updateChildVisibilityMutuallyExclusive()
 root.insertChildNode(1, heating_layers)
