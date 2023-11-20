@@ -48,28 +48,33 @@ root = project.instance().layerTreeRoot()
 layers = []
 
 # Used to create a point layer from csv data
-def createCSVLayers(file_path: str, fields: QgsFields, feats: typing.List[str], headers: typing.List[str], housing_layer: QgsVectorLayer) -> QgsVectorDataProvider:
-    with open(file_path) as f:
-        lines = f.read().splitlines()
-        
-        for line in lines[1:]:
-            values = line.split(',')
-            feat = QgsFeature(fields)
-            feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(float(values[headers.index("LONGITUDE")]), float(values[headers.index("LATITUDE")]))))
-            try:
-                for header, csv_value in zip(headers, values):
-                    feat[header] = csv_value
-            except Exception as e:
-                logging.error(traceback.format_exc())
-            feats.append(feat)
+def createCSVLayers(lines: typing.List[str], headers: typing.List[str], housing_layer: QgsVectorLayer) -> QgsVectorDataProvider:
+    
+    prov = housing_layer.dataProvider()
+    fields = prov.fields()
+    feats = []
+    
+    for line in lines[1:]:
+        if not line.strip():
+            continue
+        values = line.split(',')
+        feat = QgsFeature(fields)
+        feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(float(values[headers.index("LONGITUDE")]), float(values[headers.index("LATITUDE")]))))
+        try:
+            for header, csv_value in zip(headers, values):
+                feat[header] = csv_value
+        except Exception as e:
+            logging.error(traceback.format_exc())
+        feats.append(feat)
     prov.addFeatures(feats)
     housing_layer.updateExtents()
     housing_layer.setCrs(QgsCoordinateReferenceSystem('EPSG:4326'))
+    root.insertChildNode(0, QgsLayerTreeLayer(housing_layer))
     logging.debug("Created prov")
     return prov
 
 # Used to create heatmap layers from csv heating data
-def createHeatingHeatmapLayers(prov: QgsVectorDataProvider, attributes: typing.List[str], heating_layers: QgsLayerTreeGroup) -> None:
+def createHeatmapLayers(prov: QgsVectorDataProvider, attributes: typing.List[str], heating_layers: QgsLayerTreeGroup) -> None:
     
     # Create a heatmap layer for each attribute in heating_attributes
     for attribute_name in attributes:
@@ -109,7 +114,7 @@ def createHeatingHeatmapLayers(prov: QgsVectorDataProvider, attributes: typing.L
             except:
                 logging.error(traceback.format_exc())
             if value > 0:
-                new_feats.append(feat)
+                new_feats.append(QgsFeature(feat))
         
         heatmap_provider.addFeatures(new_feats)
         heatmap_layer.updateExtents()
@@ -321,68 +326,89 @@ def translate(value, fromMin, fromMax, toMin, toMax):
     valueScaled = float(value - fromMin) / float(fromSpan)
     return toMin + (valueScaled * toSpan)
 
-# Create layer groups for heating information and demographic information
-heating_layers = QgsLayerTreeGroup("Heating Types")
-demographic_layers = QgsLayerTreeGroup("Demographic Info")
-
-# Create layers for each shape file or csv in the layers folder
-for fileName in os.listdir(folderDirectory):
-    fullFile = folderDirectory + os.sep + fileName
-    path, type = os.path.splitext(fileName)
-    logging.info(f"Read {fileName}")
-    
-    # Create a vector layer from shape files
-    if fileName.endswith(".shp"):
-        layer = QgsVectorLayer(fullFile, fileName, "ogr")
-        
-        # Attempt to add the layer
-        try:
-            layers.append(layer)
-            project.instance().addMapLayer(layer)
-        except:
-            logging.warning("Layer " + fileName + " failed to load!")
-    
-    # Create vector layers from csv files
-    elif fileName.endswith(".csv"):
+# Read all files in the directory stated and create layers accordingly
+def readFolder(directory: str):
+    logging.info(directory)
+    if directory.__contains__('housing'):
+        first = True
+        lines = []
+        for fileName in os.listdir(directory):
+            fullFile = directory + os.sep + fileName
+            path, type = os.path.splitext(fileName)
+            with open(fullFile) as f:
+                if first == True:
+                    lines.extend(f.read().splitlines())
+                    first = False
+                else:
+                    lines.extend(f.read().splitlines()[1:])
+            
         # Store the headers of the csv file
         with open(fullFile, 'r', newline='') as file:
             reader = csv.reader(file)
             headers = next(reader)
             headers = [header.strip() for header in headers]
-        
+
         # Create the csv path (csv_info) and add the csv headers to the path
         csv_info = "Point?crs=EPSG:4326"
-        for index, header_name in enumerate(headers):
-            # headers[index] = header_name
+        for header_name in headers:
             csv_info += f"&field={header_name}"
-        
-        names = []
-        for child in root.children():
-            names.append(child.name())
             
-        if not names.__contains__("Locations"):
-            layer = QgsVectorLayer(csv_info, "Locations", "memory")
-            prov = layer.dataProvider()
-            fields = prov.fields()
-            feats = []
-        
+        layer = QgsVectorLayer(csv_info, "Locations", "memory")
+
         try:
             # Extracts desired attribute names from the csv headers
-            attributes = headers
-            if headers.__contains__("LONGITUDE"):
-                new_prov = createCSVLayers(fullFile, fields, feats, headers, layer)
-                attributes = list(itertools.dropwhile(lambda x : x != "LONGITUDE", headers))
-                attributes.remove("LONGITUDE")
-                createHeatingHeatmapLayers(new_prov, attributes, heating_layers)
-            elif headers.__contains__("ZCTA"):
-                attributes.remove("GEO_ID")
-                attributes.remove("STATE_FIPS")
-                createDemographicLayers(attributes, fullFile, demographic_layers)
+            new_prov = createCSVLayers(lines, headers, layer)
+            attributes = list(itertools.dropwhile(lambda x : x != "LONGITUDE", headers))
+            attributes.remove("LONGITUDE")
+            createHeatmapLayers(new_prov, attributes, heating_layers)
         except Exception as e:
             logging.error(e)
             logging.error(traceback.format_exc())
+        # root.insertChildNode(0, QgsLayerTreeLayer(layer))
+            
+    else:
+        for fileName in os.listdir(directory):
+            fullFile = directory + os.sep + fileName
+            path, type = os.path.splitext(fileName)
 
-root.insertChildNode(0, QgsLayerTreeLayer(layer))
+            # Create a vector layer from shape files
+            if fileName.endswith(".shp"):
+                layer = QgsVectorLayer(fullFile, fileName, "ogr")
+
+                # Attempt to add the layer
+                try:
+                    layers.append(layer)
+                    project.instance().addMapLayer(layer)
+                except:
+                    logging.warning("Layer " + fileName + " failed to load!")
+
+            # Create vector layers from csv files
+            elif fileName.endswith(".csv"):
+                
+                # Store the headers of the csv file
+                with open(fullFile, 'r', newline='') as file:
+                    reader = csv.reader(file)
+                    headers = next(reader)
+                    headers = [header.strip() for header in headers]
+
+                try:
+                    # Extracts desired attribute names from the csv headers
+                    attributes = headers
+                    attributes.remove("GEO_ID")
+                    attributes.remove("STATE_FIPS")
+                    createDemographicLayers(attributes, fullFile, demographic_layers)
+                except Exception as e:
+                    logging.error(e)
+                    logging.error(traceback.format_exc())
+
+# Create layer groups for heating information and demographic information
+heating_layers = QgsLayerTreeGroup("Heating Types")
+demographic_layers = QgsLayerTreeGroup("Demographic Info")
+
+readFolder(os.path.join(folderDirectory, 'housing'))
+readFolder(os.path.join(folderDirectory, 'demographic'))
+# readFolder(os.path.join(folderDirectory, 'shapefiles'))
+
 heating_layers.updateChildVisibilityMutuallyExclusive()
 root.insertChildNode(1, heating_layers)
 demographic_layers.updateChildVisibilityMutuallyExclusive()
