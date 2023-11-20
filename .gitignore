@@ -6,5 +6,4 @@
 /layers/qgis_sample_data
 /layers/State_Zips
 .env
-layers/census_data.csv
-layers/acs5-group-DP05-zcta-state-06.csv
+*.csv

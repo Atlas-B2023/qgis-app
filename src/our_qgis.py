@@ -32,7 +32,7 @@ except Exception as e:
     logging.exception("Exception occurred: " + str(e))
 
 # Initialize QGIS
-QgsApplication.setPrefixPath("~/QGIS 3.32.3", True)
+QgsApplication.setPrefixPath("~/QGIS 3.34.0", True)
 qgs = QgsApplication([], False)
 qgs.initQgis()
 logging.debug("Initialized QGIS")
@@ -43,11 +43,9 @@ project.read()
 
 # Set up a layer tree
 root = project.instance().layerTreeRoot()
-logging.debug("Set up layer tree")
 
 # Load all layers
 layers = []
-logging.debug("Layers list")
 
 # Used to create a point layer from csv data
 def createCSVLayers(file_path: str, fields: QgsFields, feats: typing.List[str], headers: typing.List[str], housing_layer: QgsVectorLayer) -> QgsVectorDataProvider:
@@ -62,7 +60,7 @@ def createCSVLayers(file_path: str, fields: QgsFields, feats: typing.List[str], 
                 for header, csv_value in zip(headers, values):
                     feat[header] = csv_value
             except Exception as e:
-                logging.error(str(e))
+                logging.error(traceback.format_exc())
             feats.append(feat)
     prov.addFeatures(feats)
     housing_layer.updateExtents()
@@ -109,7 +107,7 @@ def createHeatingHeatmapLayers(prov: QgsVectorDataProvider, attributes: typing.L
                 else:
                     value = float(feat[attribute_name])
             except:
-                print(feat[attribute_name])
+                logging.error(traceback.format_exc())
             if value > 0:
                 new_feats.append(feat)
         
@@ -143,7 +141,7 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
         
     # Create a layer for each attribute in heating_attributes
     for index, attribute_name in enumerate(attributes):
-        if index == 0 or index % 4 == 0:
+        if index == 2 or (index-2) % 4 == 0:
             demo_layer = QgsVectorLayer("MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory")
             demo_prov = demo_layer.dataProvider()
             original_fields = base_layer.fields()
@@ -177,7 +175,7 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                         new_feat.resizeAttributes(31)
                         features_size = new_feat.fields().size()
                     
-                    for i in range(0, 4):
+                    for i in range(-2, 2):
                         if attributes[index+i] == "ZCTA":
                             break
                         demo_layer.addAttribute(QgsField(attributes[index+i], QVariant.String))
@@ -212,7 +210,7 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                             continue
                 unique_max = max(new_uniques)
                 unique_min = min(new_uniques)
-                logging.info(f"{attribute_name = }, {unique_max = }, {unique_min = }")
+                # logging.info(f"{attribute_name = }, {unique_max = }, {unique_min = }")
                 color_ramp = QgsGradientColorRamp(QColor(255,255,255,160), QColor(0,0,255,160))
                 
                 # try:
@@ -303,21 +301,16 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                     renderer.addCategory(category)
                 demo_layer.setRenderer(renderer)
             except Exception as e:
-                logging.error(e)
                 logging.error(traceback.format_exc())
-            
-            # logging.info("nick")
             
             # Add the layer to the Layer Tree
             demographic.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer))
-            # logging.info("knack")
             
             # Display the layer
             layers.append(demo_layer)
-            # logging.info("Paddy-whack")
-            # logging.info(index)
+            
             # Used to limit number of layers generated for testing
-        if index == 4:
+        if index == 6:
             logging.info(index)
             break
         
@@ -336,6 +329,7 @@ demographic_layers = QgsLayerTreeGroup("Demographic Info")
 for fileName in os.listdir(folderDirectory):
     fullFile = folderDirectory + os.sep + fileName
     path, type = os.path.splitext(fileName)
+    logging.info(f"Read {fileName}")
     
     # Create a vector layer from shape files
     if fileName.endswith(".shp"):
@@ -362,19 +356,24 @@ for fileName in os.listdir(folderDirectory):
             # headers[index] = header_name
             csv_info += f"&field={header_name}"
         
-        layer = QgsVectorLayer(csv_info, "locations", "memory")
-        prov = layer.dataProvider()
-        fields = prov.fields()
-        feats = []
+        names = []
+        for child in root.children():
+            names.append(child.name())
+            
+        if not names.__contains__("Locations"):
+            layer = QgsVectorLayer(csv_info, "Locations", "memory")
+            prov = layer.dataProvider()
+            fields = prov.fields()
+            feats = []
         
         try:
             # Extracts desired attribute names from the csv headers
             attributes = headers
             if headers.__contains__("LONGITUDE"):
-                prov = createCSVLayers(fullFile, fields, feats, headers, layer)
+                new_prov = createCSVLayers(fullFile, fields, feats, headers, layer)
                 attributes = list(itertools.dropwhile(lambda x : x != "LONGITUDE", headers))
                 attributes.remove("LONGITUDE")
-                createHeatingHeatmapLayers(prov, attributes, heating_layers)
+                createHeatingHeatmapLayers(new_prov, attributes, heating_layers)
             elif headers.__contains__("ZCTA"):
                 attributes.remove("GEO_ID")
                 attributes.remove("STATE_FIPS")
@@ -383,7 +382,6 @@ for fileName in os.listdir(folderDirectory):
             logging.error(e)
             logging.error(traceback.format_exc())
 
-logging.info("there")
 root.insertChildNode(0, QgsLayerTreeLayer(layer))
 heating_layers.updateChildVisibilityMutuallyExclusive()
 root.insertChildNode(1, heating_layers)
