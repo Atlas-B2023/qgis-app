@@ -14,7 +14,7 @@ The base qgis project is provided within this program.
 
 To load it, run QGIS and in the top left click "Project."
 
-Navigate to this project file, and go to QGIS Map\Electrification Tracker Base Map.qgz
+Navigate to this project file, and go to QGIS Map\Electrification Tracker Base Map.qgz.
 
 ### Extracting Sample Data
 This project comes with sample data that can be run without running the scraper tool.
@@ -23,21 +23,36 @@ This project comes with sample data that can be run without running the scraper 
 >To get updated data, the scraper tool must be run.
 >Data collected from running the scraper does not need to be loaded in the same way as the sample data.
 
-To load the sample housing data, head to the sample folder and copy all files with a numeric name (representing zip code)
+To load the sample housing data, head to the sample folder and copy all files with a numeric name (representing zip code).
 
-Paste these files in the housing folder located at qgis-app\layers\housing (this will cahnge)
+Paste these files in the housing folder located at qgis-app\layers\housing (this will cahnge).
 
-To load the sample demographic data, heat to the sample folder and copy the reamining unused files (typically starting with "acs5")
+To load the sample demographic data, heat to the sample folder and copy the reamining unused files (typically starting with "acs5").
 
-Paste these files in the demographic folder located at qgis-app\layers\demographic (this will change)
+Paste these files in the demographic folder located at qgis-app\layers\demographic (this will change).
 
 ### Running the Script
+To run the scrip, load the base map qgis project.
+
+Click on the python symbol (The second from the right on the bottom row of the taskbar on the top of the sscreen).
+
+Next, in the python console that appears, click the Show Editor button (the third from the left that looks like a sheet of paper)
+
+Then, click on the Open Script button (the left most icon) in the new window that appears.
+
+From here, navigate to the script location qgis-app\src\our_qgis.py and click "Open."
+
+Now run the script by clicking the green arrow icon in the script editor (fifth from the left).
+
+>[!NOTE]
+>For more information on how to use the program, please refer to the Video Tutorials here: [Atlas IQP QGIS Video Tutorials](link)
+
 
 ## Development
 >[!NOTE]
 >This is just for furture development on this project. If you are not changing or adding to this project, you do not need to follow these steps.
 
-### Setting up System Environments
+### Setting Up System Environments
 There are a few paths that need to be set up within the system environment. The following steps will guide you through how:
 1. Within the taskbar seach bar, search for environment variables and click on the one that says "Edit the systems environment variables."
 2. In the bottom right of the popup, click "Environment Variables..."
