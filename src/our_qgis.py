@@ -20,7 +20,7 @@ project_directory = os.path.dirname(QgsProject.instance().fileName())
 parent_directory = os.path.dirname(project_directory)
 
 # Set up project log file
-log_file_path = os.path.join(parent_directory, 'qgisdebug.log')
+log_file_path = os.path.join(parent_directory, "qgisdebug.log")
 logging.basicConfig(filename=log_file_path, level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logging.info("========================================================================")
 
@@ -69,6 +69,7 @@ def createCSVLayers(lines: typing.List[str], headers: typing.List[str], housing_
     housing_layer.setRenderer(housing_layer.renderer().defaultRenderer(housing_layer.geometryType()))
     housing_layer.updateExtents()
     housing_layer.setCrs(QgsCoordinateReferenceSystem('EPSG:4326'))
+    # root.insertChildNode(0, QgsLayerTreeLayer(housing_layer))
     project.instance().addMapLayer(housing_layer)
     return prov
 
@@ -95,10 +96,10 @@ def createHeatmapLayers(prov: QgsVectorDataProvider, attributes: typing.List[str
         
         heatmap_provider = heatmap_layer.dataProvider()
         heatmap_renderer = QgsHeatmapRenderer()
-        heatmap_renderer.setWeightExpression('1')
+        heatmap_renderer.setWeightExpression("1")
         heatmap_renderer.setRadius(10)
         
-        color_ramp = QgsStyle().defaultStyle().colorRamp('TransparentBlue')
+        color_ramp = QgsStyle().defaultStyle().colorRamp("TransparentBlue")
         heatmap_renderer.setColorRamp(color_ramp)
         
         # Determine if a feature is worth putting on a layer
@@ -106,8 +107,9 @@ def createHeatmapLayers(prov: QgsVectorDataProvider, attributes: typing.List[str
         for feat in prov.getFeatures():
             try:
                 if feat[attribute_name] == "true":
-                    new_feat = QgsFeature(QgsFields(feat.fields()))
-                    new_feats.append(new_feat)
+                    # new_feat = QgsFeature(QgsFields(feat.fields()))
+                    # new_feats.append(new_feat)
+                    new_feats.append(QgsFeature(feat))
             except:
                 logging.error(traceback.format_exc())
                 
@@ -251,14 +253,16 @@ def readFolder(directory: str):
         
         # Iterates through the folder and adds the lines from all csvs to the list lines
         for fileName in os.listdir(directory):
-            fullFile = directory + os.sep + fileName
             path, type = os.path.splitext(fileName)
-            with open(fullFile) as f:
-                if first == True:
-                    lines.extend(f.read().splitlines())
-                    first = False
-                else:
-                    lines.extend(f.read().splitlines()[1:])
+            logging.info(path)
+            if len(path) <= 5:
+                fullFile = directory + os.sep + fileName
+                with open(fullFile) as f:
+                    if first == True:
+                        lines.extend(f.read().splitlines())
+                        first = False
+                    else:
+                        lines.extend(f.read().splitlines()[1:])
             
         # Store the headers of the csv file
         with open(fullFile, 'r', newline='') as file:
@@ -324,11 +328,10 @@ demographic_layers = QgsLayerTreeGroup("Demographic Info")
 
 # Calls to read specific folders within the layers folder
 # To read files in a new folder, add a new line with the folder to be read as the second parameter
-readFolder(os.path.join(folderDirectory, 'housing'))
-readFolder(os.path.join(folderDirectory, 'demographic'))
+readFolder(os.path.join(folderDirectory, "housing"))
+readFolder(os.path.join(folderDirectory, "demographic"))
 
 heating_layers.updateChildVisibilityMutuallyExclusive()
-# project.instance().addMapLayer(heating_layers)
 root.insertChildNode(1, heating_layers)
 demographic_layers.updateChildVisibilityMutuallyExclusive()
 root.insertChildNode(2, demographic_layers)
