@@ -49,7 +49,6 @@ layers = []
 
 # Used to create a point layer from csv data
 def createCSVLayers(lines: typing.List[str], headers: typing.List[str], housing_layer: QgsVectorLayer) -> QgsVectorDataProvider:
-    
     prov = housing_layer.dataProvider()
     fields = prov.fields()
     feats = []
@@ -67,10 +66,10 @@ def createCSVLayers(lines: typing.List[str], headers: typing.List[str], housing_
             logging.error(traceback.format_exc())
         feats.append(feat)
     prov.addFeatures(feats)
+    housing_layer.setRenderer(housing_layer.renderer().defaultRenderer(housing_layer.geometryType()))
     housing_layer.updateExtents()
     housing_layer.setCrs(QgsCoordinateReferenceSystem('EPSG:4326'))
-    root.insertChildNode(0, QgsLayerTreeLayer(housing_layer))
-    logging.debug("Created prov")
+    project.instance().addMapLayer(housing_layer)
     return prov
 
 # Used to create heatmap layers from csv heating data
@@ -79,6 +78,7 @@ def createHeatmapLayers(prov: QgsVectorDataProvider, attributes: typing.List[str
     # Create a heatmap layer for each attribute in heating_attributes
     for attribute_name in attributes:
         
+        # Checks if there is already a layer for an attribute, and if not it creates one
         check = False
         if len(heating_layers.children()) == 0:
             heatmap_layer = QgsVectorLayer("Point?crs=EPSG:4326", f"Heatmap - {attribute_name}", "memory")
@@ -106,16 +106,12 @@ def createHeatmapLayers(prov: QgsVectorDataProvider, attributes: typing.List[str
         for feat in prov.getFeatures():
             try:
                 if feat[attribute_name] == "true":
-                    value = 1.0
-                elif feat[attribute_name] == "false":
-                    value = 0.0
-                else:
-                    value = float(feat[attribute_name])
+                    new_feat = QgsFeature(QgsFields(feat.fields()))
+                    new_feats.append(new_feat)
             except:
                 logging.error(traceback.format_exc())
-            if value > 0:
-                new_feats.append(QgsFeature(feat))
-        
+                
+        # Update the layer with the new features
         heatmap_provider.addFeatures(new_feats)
         heatmap_layer.updateExtents()
         heatmap_layer.setRenderer(heatmap_renderer)
@@ -218,83 +214,6 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                 # logging.info(f"{attribute_name = }, {unique_max = }, {unique_min = }")
                 color_ramp = QgsGradientColorRamp(QColor(255,255,255,160), QColor(0,0,255,160))
                 
-                # try:
-                #     num_divisions = 15
-                #     divisions = []
-                #     if unique_min == 0.0:
-                #         adjusted_min = 0.0
-                #     else:
-                #         adjusted_min = 10 ** math.ceil(math.log10(unique_min))
-                #     adjusted_max = 10 ** math.ceil(math.log10(unique_max))
-                #     divisions_range = adjusted_max - adjusted_min
-                #     divisions_step = divisions_range/num_divisions
-                #     logging.info(f"{adjusted_min = }, {adjusted_max = }, {divisions_range = }, {divisions_step = }")
-                #     i = 0
-                #     while i < num_divisions:
-                #         divisions.append(adjusted_min + (divisions_step * i))
-                #         i+=1
-                # except Exception as e:
-                #     logging.error(e)
-                #     logging.error(traceback.format_exc())
-                
-                # logging.info(divisions)
-                # # render_ranges = []
-                # # logging.info("here")
-                # try:
-                #     geom_type = demo_layer.geometryType()
-                #     # logging.info(demo_layer.geometryType())
-                #     # logging.info(demo_layer.getFeature(22383).isValid())
-                #     # logging.info(demo_layer.getFeature(22383).attributes())
-                #     # logging.info(demo_layer.getFeature(22383).geometry().type())
-                #     # logging.info(demo_layer.getFeature(22383).embeddedSymbol())
-                #     # geom_type = Qgis.GeometryType("MultiPolygon")
-                #     logging.info(f"{geom_type = }")
-                #     symbol = QgsSymbol.defaultSymbol(geom_type)
-                #     logging.info(f"created symbol 1 {symbol = }")
-                #     logging.info(f"{index = }")
-                #     if index == 0:
-                #         renderer_ranges = {f"{index}": []}
-                #         logging.info(f"created symbol 2 {symbol = }")
-                #         j = 0
-                #         logging.info(f"{j < len(divisions)-1 = }")
-                #         while j < len(divisions)-1:
-                #             logging.info(f"{index = }")
-                #             logging.info(f"{attribute_name = }, {len(divisions) = }, {j = }, {divisions[j] = }, {divisions[j+1] = }, {len(renderer_ranges.get(f'{index}')) = }")
-                #             label = "test"
-                #             renderer_range = QgsRendererRange(divisions[j], divisions[j+1], symbol, label)
-                #             renderer_ranges[f"{index}"].append(renderer_range)
-                #             j += 1
-                #         renderer = QgsGraduatedSymbolRenderer(attribute_name, renderer_ranges.get(f"{index}"))
-                #         logging.info(f"created symbol 3 {symbol = }")
-                #         renderer.updateColorRamp(color_ramp)
-                #         logging.info(f"created symbol 4 {symbol = }")
-                #         demo_layer.setRenderer(renderer)
-                #         logging.info(f"created symbol 5 {symbol = }")
-                #         logging.info(f"created symbol 6 {symbol = }")
-                #     elif index == 4:
-                #         renderer_ranges2 = {f"{index}": []}
-                #         logging.info(f"created symbol 2 {symbol = }")
-                #         j = 0
-                #         logging.info(f"{j < len(divisions)-1 = }")
-                #         while j < len(divisions)-1:
-                #             logging.info(f"{index = }")
-                #             logging.info(f"{attribute_name = }, {len(divisions) = }, {j = }, {divisions[j] = }, {divisions[j+1] = }, {len(renderer_ranges2.get(f'{index}')) = }")
-                #             label = "test"
-                #             renderer_range = QgsRendererRange(divisions[j], divisions[j+1], symbol, label)
-                #             renderer_ranges2[f"{index}"].append(renderer_range)
-                #             j += 1
-                #         renderer = QgsGraduatedSymbolRenderer(attribute_name, renderer_ranges2.get(f"{index}"))
-                #         logging.info(f"created symbol 3 {symbol = }")
-                #         renderer.updateColorRamp(color_ramp)
-                #         logging.info(f"created symbol 4 {symbol = }")
-                #         demo_layer.setRenderer(renderer)
-                #         logging.info(f"created symbol 5 {symbol = }")
-                #         logging.info(f"created symbol 6 {symbol = }")
-                # except Exception as e:
-                #     logging.info("hello")
-                #     logging.error(e)
-                #     logging.error(traceback.format_exc())
-                
                 renderer = QgsCategorizedSymbolRenderer(attribute_name)
                 for value in new_uniques:
                     symbol = QgsSymbol.defaultSymbol(demo_layer.geometryType())
@@ -328,7 +247,8 @@ def translate(value, fromMin, fromMax, toMin, toMax):
 
 # Read all files in the directory stated and create layers accordingly
 def readFolder(directory: str):
-    logging.info(directory)
+    
+    # All data within files in the housing folder will be combined in memory and processed as one
     if directory.__contains__('housing'):
         first = True
         lines = []
@@ -365,7 +285,8 @@ def readFolder(directory: str):
             logging.error(e)
             logging.error(traceback.format_exc())
         # root.insertChildNode(0, QgsLayerTreeLayer(layer))
-            
+    
+    # All files in the other folders, in the layers folder, will be processed individually
     else:
         for fileName in os.listdir(directory):
             fullFile = directory + os.sep + fileName
@@ -415,5 +336,5 @@ demographic_layers.updateChildVisibilityMutuallyExclusive()
 root.insertChildNode(2, demographic_layers)
 
 # Run the QGIS application event loop
-qgs.exec_()
+# qgs.exec_()
 logging.debug("Last one") 
