@@ -1,27 +1,37 @@
+import re
 from qgis.core import *
 from qgis.gui import *
 from qgis.utils import *
-from PyQt5.QtCore import Qt, QVariant
+from PyQt5.QtCore import QVariant
 from qgis.PyQt.QtGui import QColor
 import logging
 import csv
 import typing
 import itertools
 import traceback
-import statistics
-import math
-import importlib.util
-import sys
+from pathlib import Path
+
+# Keep in mind that this program will be running with python 3.9
 
 # qgis = importlib.util.spec_from_file_location("qgis", "C:\Program Files\QGIS 3.34.0\apps\qgis\python\qgis")
 
 # Grab the directory of the qgis project and parent folder of the project
 project_directory = os.path.dirname(QgsProject.instance().fileName())
 parent_directory = os.path.dirname(project_directory)
+METRO_DIRECTORY = (
+    Path(__file__).parent.parent.parent
+    / "ResidentialElectrificationTracker"
+    / "output"
+    / "metro_data"
+)
 
 # Set up project log file
 log_file_path = os.path.join(parent_directory, "qgisdebug.log")
-logging.basicConfig(filename=log_file_path, level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(
+    filename=log_file_path,
+    level=logging.DEBUG,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
 logging.info("========================================================================")
 
 # Attempt to retrieve the path to the qgis-app and layers folders
@@ -47,42 +57,60 @@ root = project.instance().layerTreeRoot()
 # Load all layers
 layers = []
 
+
 # Used to create a point layer from csv data
-def createCSVLayers(lines: typing.List[str], headers: typing.List[str], housing_layer: QgsVectorLayer) -> QgsVectorDataProvider:
+def createCSVLayers(
+    lines: typing.List[str], headers: typing.List[str], housing_layer: QgsVectorLayer
+) -> QgsVectorDataProvider:
     prov = housing_layer.dataProvider()
     fields = prov.fields()
     feats = []
-    
+
+    # expecting lines to include header
     for line in lines[1:]:
         if not line.strip():
             continue
-        values = line.split(',')
+        values = line.split(",")
         feat = QgsFeature(fields)
-        feat.setGeometry(QgsGeometry.fromPointXY(QgsPointXY(float(values[headers.index("LONGITUDE")]), float(values[headers.index("LATITUDE")]))))
+        feat.setGeometry(
+            QgsGeometry.fromPointXY(
+                QgsPointXY(
+                    float(values[headers.index("LONGITUDE")]),
+                    float(values[headers.index("LATITUDE")]),
+                )
+            )
+        )
         try:
             for header, csv_value in zip(headers, values):
                 feat[header] = csv_value
-        except Exception as e:
+        except Exception:
             logging.error(traceback.format_exc())
         feats.append(feat)
     prov.addFeatures(feats)
-    housing_layer.setRenderer(housing_layer.renderer().defaultRenderer(housing_layer.geometryType()))
+    housing_layer.setRenderer(
+        housing_layer.renderer().defaultRenderer(housing_layer.geometryType())
+    )
     housing_layer.updateExtents()
-    housing_layer.setCrs(QgsCoordinateReferenceSystem('EPSG:4326'))
+    housing_layer.setCrs(QgsCoordinateReferenceSystem("EPSG:4326"))
     # root.insertChildNode(0, QgsLayerTreeLayer(housing_layer))
     project.instance().addMapLayer(housing_layer)
     return prov
 
+
 # Used to create heatmap layers from csv heating data
-def createHeatmapLayers(prov: QgsVectorDataProvider, attributes: typing.List[str], heating_layers: QgsLayerTreeGroup) -> None:
-    
+def createHeatmapLayers(
+    prov: QgsVectorDataProvider,
+    attributes: typing.List[str],
+    heating_layers: QgsLayerTreeGroup,
+) -> None:
     # Create a heatmap layer for each attribute in heating_attributes
     for attribute_name in attributes:
-        
         # Checks if there is already a layer for an attribute, and if not it creates one
         check = False
         if len(heating_layers.children()) == 0:
-            heatmap_layer = QgsVectorLayer("Point?crs=EPSG:4326", f"Heatmap - {attribute_name}", "memory")
+            heatmap_layer = QgsVectorLayer(
+                "Point?crs=EPSG:4326", f"Heatmap - {attribute_name}", "memory"
+            )
             check = False
         else:
             for child_node in heating_layers.children():
@@ -91,17 +119,19 @@ def createHeatmapLayers(prov: QgsVectorDataProvider, attributes: typing.List[str
                     check = True
                     break
                 else:
-                    heatmap_layer = QgsVectorLayer("Point?crs=EPSG:4326", f"Heatmap - {attribute_name}", "memory")
+                    heatmap_layer = QgsVectorLayer(
+                        "Point?crs=EPSG:4326", f"Heatmap - {attribute_name}", "memory"
+                    )
                     check = False
-        
+
         heatmap_provider = heatmap_layer.dataProvider()
         heatmap_renderer = QgsHeatmapRenderer()
         heatmap_renderer.setWeightExpression("1")
         heatmap_renderer.setRadius(10)
-        
+
         color_ramp = QgsStyle().defaultStyle().colorRamp("TransparentBlue")
         heatmap_renderer.setColorRamp(color_ramp)
-        
+
         # Determine if a feature is worth putting on a layer
         new_feats = []
         for feat in prov.getFeatures():
@@ -112,47 +142,53 @@ def createHeatmapLayers(prov: QgsVectorDataProvider, attributes: typing.List[str
                     new_feats.append(QgsFeature(feat))
             except:
                 logging.error(traceback.format_exc())
-                
+
         # Update the layer with the new features
         heatmap_provider.addFeatures(new_feats)
         heatmap_layer.updateExtents()
         heatmap_layer.setRenderer(heatmap_renderer)
         heatmap_layer.setSubLayerVisibility(attribute_name, False)
-        
+
         # Add the heatmap layer to the Layer Tree
         if check == False:
-            heating_layers.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(heatmap_layer))
+            heating_layers.insertChildNode(
+                attributes.index(attribute_name), QgsLayerTreeLayer(heatmap_layer)
+            )
 
         # Display the heatmap
         layers.append(heatmap_layer)
 
+
 # Used to create heatmap layers from csv demographic data
-def createDemographicLayers(attributes: typing.List[str], file_path: str, demographic: QgsLayerTreeGroup) -> None:
-    
+def createDemographicLayers(
+    attributes: typing.List[str], file_path: str, demographic: QgsLayerTreeGroup
+) -> None:
     # Create a dictionary of demographic variables as related to zipcodes
-    with open(file_path, newline='') as csvfile:
+    with open(file_path, newline="") as csvfile:
         reader = csv.DictReader(csvfile)
-        data = {row['ZCTA']: {attr: row[attr] for attr in attributes} for row in reader}
+        data = {row["ZCTA"]: {attr: row[attr] for attr in attributes} for row in reader}
 
     for layer in QgsProject.instance().mapLayers().values():
         if layer.name() == "BaseLayerDB — Zips_in_Metros":
             base_layer = layer.clone()
             break
-        
+
     # Create a layer for each attribute in heating_attributes
     for index, attribute_name in enumerate(attributes):
         # Limits the layers to only percentage attributes, with the other attributes still being attached to the zip code
         # Change what equals for different attributes (0 through 3)
-        if index == 2 or (index-2) % 4 == 0:
-            demo_layer = QgsVectorLayer("MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory")
+        if index == 2 or (index - 2) % 4 == 0:
+            demo_layer = QgsVectorLayer(
+                "MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory"
+            )
             demo_prov = demo_layer.dataProvider()
             original_fields = base_layer.fields()
             demo_prov.addAttributes(original_fields.toList())
-            
+
             demo_layer.triggerRepaint()
             demo_fields = demo_prov.fields()
-            
-            demo_layer.startEditing() # Acts as with edit(demo_layer), as that method does not work
+
+            demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
             for ftr in base_layer.getFeatures():
                 new_ftr = QgsFeature()
                 new_ftr.setGeometry(ftr.geometry())
@@ -161,45 +197,55 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
             demo_layer.loadNamedStyle(base_layer.styleURI())
             demo_layer.styleManager().copyStylesFrom(base_layer.styleManager())
 
-            
-            demo_layer.startEditing() # Acts as with edit(demo_layer), as that method does not work
-            demo_layer.deleteAttributes([27, 28, 29, 30]) # Makes sure these attributes are empty before filling them
-            
+            demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
+            demo_layer.deleteAttributes(
+                [27, 28, 29, 30]
+            )  # Makes sure these attributes are empty before filling them
+
             for feature in demo_layer.getFeatures():
                 zip_code = feature.attribute("ZCTA5")
-                
+
                 # Makes sure there is data for a zip code and the attribute does not already exist in the fields
-                if (zip_code in data.keys()) and (attribute_name not in demo_fields.names()):
+                if (zip_code in data.keys()) and (
+                    attribute_name not in demo_fields.names()
+                ):
                     feat_id = feature.id()
                     new_feat = demo_layer.getFeature(feat_id)
                     features_size = new_feat.fields().size()
-                    
-                    if (features_size == 27):
+
+                    if features_size == 27:
                         new_feat.resizeAttributes(31)
                         features_size = new_feat.fields().size()
-                    
+
                     # Adds the group of four attributes to the zip code
                     # If the index statement was changed above, the values in range will also need to be changed
                     for i in range(-2, 2):
-                        if attributes[index+i] == "ZCTA":
+                        if attributes[index + i] == "ZCTA":
                             break
-                        demo_layer.addAttribute(QgsField(attributes[index+i], QVariant.String))
-                        new_feat.fields().append(QgsField(attributes[index+i], QVariant.String), originIndex = features_size+i)
-                        field_idx = new_feat.fields().indexOf(attributes[index+i])
-                        value = data[zip_code].get(attributes[index+i]).strip()
-                        
+                        demo_layer.addAttribute(
+                            QgsField(attributes[index + i], QVariant.String)
+                        )
+                        new_feat.fields().append(
+                            QgsField(attributes[index + i], QVariant.String),
+                            originIndex=features_size + i,
+                        )
+                        field_idx = new_feat.fields().indexOf(attributes[index + i])
+                        value = data[zip_code].get(attributes[index + i]).strip()
+
                         if field_idx == -1 and features_size == 27:
-                            new_feat.setAttribute(features_size+i, value)
+                            new_feat.setAttribute(features_size + i, value)
                         elif field_idx == -1 and not features_size == 27:
-                            new_feat.setAttribute(features_size+i-4, value)
+                            new_feat.setAttribute(features_size + i - 4, value)
                         else:
                             new_feat.setAttribute(field_idx, value)
-                    
+
                     demo_layer.updateFeature(new_feat)
-            
+
             # Colors the zip codes per the selected attribute's value
             try:
-                unique_values = demo_layer.uniqueValues(demo_layer.fields().indexOf(attribute_name))
+                unique_values = demo_layer.uniqueValues(
+                    demo_layer.fields().indexOf(attribute_name)
+                )
                 new_uniques = []
                 for value in unique_values:
                     if value is not None:
@@ -213,8 +259,10 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                             continue
                 unique_max = max(new_uniques)
                 unique_min = min(new_uniques)
-                color_ramp = QgsGradientColorRamp(QColor(255,255,255,160), QColor(0,0,255,160))
-                
+                color_ramp = QgsGradientColorRamp(
+                    QColor(255, 255, 255, 160), QColor(0, 0, 255, 160)
+                )
+
                 renderer = QgsCategorizedSymbolRenderer(attribute_name)
                 for value in new_uniques:
                     symbol = QgsSymbol.defaultSymbol(demo_layer.geometryType())
@@ -224,18 +272,21 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                     category = QgsRendererCategory(value, symbol, str(value))
                     renderer.addCategory(category)
                 demo_layer.setRenderer(renderer)
-            except Exception as e:
+            except Exception:
                 logging.error(traceback.format_exc())
-            
+
             # Add the layer to the Layer Tree
-            demographic.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer))
+            demographic.insertChildNode(
+                attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer)
+            )
             layers.append(demo_layer)
-            
+
             # Used to limit number of layers generated for testing
         if index == 6:
             logging.info(index)
             break
-        
+
+
 # Used to map a value from one scale to another scale
 def translate(value, fromMin, fromMax, toMin, toMax):
     fromSpan = fromMax - fromMin
@@ -243,84 +294,79 @@ def translate(value, fromMin, fromMax, toMin, toMax):
     valueScaled = float(value - fromMin) / float(fromSpan)
     return toMin + (valueScaled * toSpan)
 
+
 # Read all files in the directory stated and create layers accordingly
-def readFolder(directory: str):
-    
+def read_housing_data(directory: Path):
     # All data within files in the housing folder will be combined in memory and processed as one
-    if directory.__contains__('housing'):
-        first = True
-        lines = []
-        
-        # Iterates through the folder and adds the lines from all csvs to the list lines
-        for fileName in os.listdir(directory):
-            path, type = os.path.splitext(fileName)
-            logging.info(path)
-            if len(path) <= 5:
-                fullFile = directory + os.sep + fileName
-                with open(fullFile) as f:
-                    if first == True:
-                        lines.extend(f.read().splitlines())
-                        first = False
-                    else:
-                        lines.extend(f.read().splitlines()[1:])
-            
-        # Store the headers of the csv file
-        with open(fullFile, 'r', newline='') as file:
-            reader = csv.reader(file)
-            headers = next(reader)
-            headers = [header.strip() for header in headers]
+    # Get list of all zipcode csvs
+    first = True
+    merged_csv_contents = []
+    headers = []
+    zip_code_csv_regex = re.compile(r"[0-9]{3}|[0-9]{4}|[0-9]{5}")
+    csv_files = [path for path in directory.rglob("*.csv") if zip_code_csv_regex.match(path.stem) is not None]    
+    logging.info(f"{csv_files=}")
+    for zip_file in csv_files:
+        with open(zip_file, "r", encoding="utf-8") as f:
+            lines = [line.strip("\r\n") for line in f.readlines()]
+            if first:
+                first = False
+                headers = lines[0].split(",")
+            # shouldnt error as each csv should only be created if data exsists (2 lines min)
+            merged_csv_contents.extend(lines[1:])
 
-        # Create the csv path (csv_info) and add the csv headers to the path
-        csv_info = "Point?crs=EPSG:4326"
-        for header_name in headers:
-            csv_info += f"&field={header_name}"
-            
-        layer = QgsVectorLayer(csv_info, "Locations", "memory")
+        logging.info(f"{headers =}")
+    # Create the csv path (csv_info) and add the csv headers to the path
+    csv_info = "Point?crs=EPSG:4326"
 
-        try:
-            # Extracts desired attribute names from the csv headers
-            new_prov = createCSVLayers(lines, headers, layer)
-            attributes = list(itertools.dropwhile(lambda x : x != "Electricity", headers))
-            createHeatmapLayers(new_prov, attributes, heating_layers)
-        except Exception as e:
-            logging.error(e)
-            logging.error(traceback.format_exc())
-    
+    csv_info += "".join([f"&field={header}" for header in headers])
+
+    layer = QgsVectorLayer(csv_info, "Locations", "memory")
+
+    try:
+        # Extracts desired attribute names from the csv headers
+        new_prov = createCSVLayers(merged_csv_contents, headers, layer)
+        attributes = list(itertools.dropwhile(lambda x: x != "Electricity", headers))
+        createHeatmapLayers(new_prov, attributes, heating_layers)
+    except Exception as e:
+        logging.error(e)
+        logging.error(traceback.format_exc())
+
+
+def read_demographics_data(directory: str):
     # All files in the other folders, in the layers folder, will be processed individually
-    else:
-        for fileName in os.listdir(directory):
-            fullFile = directory + os.sep + fileName
-            path, type = os.path.splitext(fileName)
+    for fileName in os.listdir(directory):
+        fullFile = directory + os.sep + fileName
+        path, type = os.path.splitext(fileName)
 
-            # Create a vector layer from shape files
-            if fileName.endswith(".shp"):
-                layer = QgsVectorLayer(fullFile, fileName, "ogr")
+        # Create a vector layer from shape files
+        if fileName.endswith(".shp"):
+            layer = QgsVectorLayer(fullFile, fileName, "ogr")
 
-                # Attempt to add the layer
-                try:
-                    layers.append(layer)
-                    project.instance().addMapLayer(layer)
-                except:
-                    logging.warning("Layer " + fileName + " failed to load!")
+            # Attempt to add the layer
+            try:
+                layers.append(layer)
+                project.instance().addMapLayer(layer)
+            except:
+                logging.warning("Layer " + fileName + " failed to load!")
 
-            # Create vector layers from csv files
-            elif fileName.endswith(".csv"):
-                
-                # Store the headers of the csv file
-                with open(fullFile, 'r', newline='') as file:
-                    reader = csv.reader(file)
-                    headers = next(reader)
-                    headers = [header.strip() for header in headers]
+        # Create vector layers from csv files
+        elif fileName.endswith(".csv"):
+            # Store the headers of the csv file
+            with open(fullFile, "r", newline="") as file:
+                reader = csv.reader(file)
+                headers = next(reader)
+                headers = [header.strip() for header in headers]
 
-                try:
-                    # Extracts desired attribute names from the csv headers
-                    attributes = headers
-                    attributes.remove("GEO_ID")
-                    attributes.remove("STATE_FIPS")
-                    createDemographicLayers(attributes, fullFile, demographic_layers)
-                except Exception as e:
-                    logging.error(e)
-                    logging.error(traceback.format_exc())
+            try:
+                # Extracts desired attribute names from the csv headers
+                attributes = headers
+                attributes.remove("GEO_ID")
+                attributes.remove("STATE_FIPS")
+                createDemographicLayers(attributes, fullFile, demographic_layers)
+            except Exception as e:
+                logging.error(e)
+                logging.error(traceback.format_exc())
+
 
 # Create layer groups for heating information and demographic information
 heating_layers = QgsLayerTreeGroup("Heating Types")
@@ -328,8 +374,8 @@ demographic_layers = QgsLayerTreeGroup("Demographic Info")
 
 # Calls to read specific folders within the layers folder
 # To read files in a new folder, add a new line with the folder to be read as the second parameter
-readFolder(os.path.join(folderDirectory, "housing"))
-readFolder(os.path.join(folderDirectory, "demographic"))
+read_housing_data(METRO_DIRECTORY)
+read_demographics_data(os.path.join(folderDirectory, "demographic"))
 
 heating_layers.updateChildVisibilityMutuallyExclusive()
 root.insertChildNode(1, heating_layers)
@@ -338,4 +384,4 @@ root.insertChildNode(2, demographic_layers)
 
 # Run the QGIS application event loop
 # qgs.exec_()
-logging.debug("Last one") 
+logging.debug("Last one")
