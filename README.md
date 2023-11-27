@@ -2,15 +2,42 @@
 ## Installing QGIS
 To install QGIS, head to their website [QGIS Download](https://qgis.org/en/site/forusers/download.html) and download version 3.34.0.
 This can be installed anywhere on the device.
+
 Once installed, head to AppData\Roaming\QGIS\QGIS3\profiles\default in your file explorer and delete the file called "symbology-style.db".
+
 Next, head over to the locagtion of this project and unzip sample.zip.
+
 Copy the file called symbology-style.db from this folder, and paste it in the location where you deleted the other one of the same name.
 
+## Loading the Project
+The base qgis project is provided within this program.
 
-## Setting up System Environments
+To load it, run QGIS and in the top left click "Project."
+
+Navigate to this project file, and go to QGIS Map\Electrification Tracker Base Map.qgz
+
+### Extracting Sample Data
+This project comes with sample data that can be run without running the scraper tool.
+
 >[!NOTE]
->This is just for development. If you are not changing or adding to this project, you do not need to follow these steps.
+>To get updated data, the scraper tool must be run.
+>Data collected from running the scraper does not need to be loaded in the same way as the sample data.
 
+To load the sample housing data, head to the sample folder and copy all files with a numeric name (representing zip code)
+
+Paste these files in the housing folder located at qgis-app\layers\housing (this will cahnge)
+
+To load the sample demographic data, heat to the sample folder and copy the reamining unused files (typically starting with "acs5")
+
+Paste these files in the demographic folder located at qgis-app\layers\demographic (this will change)
+
+### Running the Script
+
+## Development
+>[!NOTE]
+>This is just for furture development on this project. If you are not changing or adding to this project, you do not need to follow these steps.
+
+### Setting up System Environments
 There are a few paths that need to be set up within the system environment. The following steps will guide you through how:
 1. Within the taskbar seach bar, search for environment variables and click on the one that says "Edit the systems environment variables."
 2. In the bottom right of the popup, click "Environment Variables..."
