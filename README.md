@@ -38,7 +38,9 @@ Create a new folder named "census_data", located at `ResidentialElectrificationT
 ### Running the Script
 To run the scrip, load the base map qgis project.
 
-Click on the python icon <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Python-logo-notext.svg/640px-Python-logo-notext.svg.png" width="100" height="100"> (The second from the right on the bottom row of the taskbar on the top of the screen).
+Click on the python icon:
+
+<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Python-logo-notext.svg/640px-Python-logo-notext.svg.png" width="100" height="100"> (The second from the right on the bottom row of the taskbar on the top of the screen).
 
 Next, in the python console that appears, click the Show Editor button (the third from the left that looks like a sheet of paper)
 
