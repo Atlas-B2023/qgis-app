@@ -5,7 +5,7 @@ This can be installed anywhere on the device.
 
 Once installed, head to `AppData\Roaming\QGIS\QGIS3\profiles\default` in your file explorer and delete the file called "symbology-style.db".
 
->[!INFO]
+>[!TIP]
 >To access AppData, search for "run" in the taskbar search bar, and click on the result.
 >From there, type "%appdata%" and press enter.
 
@@ -38,7 +38,7 @@ Create a new folder named "census_data", located at `ResidentialElectrificationT
 ### Running the Script
 To run the scrip, load the base map qgis project.
 
-Click on the python icon ![Python logo](https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Python-logo-notext.svg/640px-Python-logo-notext.svg.png =250x250) (The second from the right on the bottom row of the taskbar on the top of the screen).
+Click on the python icon ![Python logo](https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Python-logo-notext.svg/640px-Python-logo-notext.svg.png | width = 100) (The second from the right on the bottom row of the taskbar on the top of the screen).
 
 Next, in the python console that appears, click the Show Editor button (the third from the left that looks like a sheet of paper)
 
