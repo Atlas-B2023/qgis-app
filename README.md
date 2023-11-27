@@ -47,6 +47,18 @@ Now run the script by clicking the green arrow icon in the script editor (fifth 
 >[!NOTE]
 >For more information on how to use the program, please refer to the Video Tutorials here: [Atlas IQP QGIS Video Tutorials](link)
 
+### Saving the Project
+When saving the project, be sure to save it as a copy, as to not override the existing one.
+
+It might be useful to create a backup of the project in the event the project is overriden.
+
+### Closing the Project
+When closing the project, there will be a couple pop-ups.
+
+The first will ask if you would like to proceed in closing the project; click "Yes."
+
+The second will ask if you would like to save the project; click "Discard."
+
 
 ## Development
 >[!NOTE]
