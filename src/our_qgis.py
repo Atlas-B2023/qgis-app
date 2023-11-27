@@ -136,12 +136,11 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
         if layer.name() == "BaseLayerDB — Zips_in_Metros":
             base_layer = layer.clone()
             break
-    
-    # for attribute_name in attributes:
-        # logging.info(attribute_name)
         
     # Create a layer for each attribute in heating_attributes
     for index, attribute_name in enumerate(attributes):
+        # Limits the layers to only percentage attributes, with the other attributes still being attached to the zip code
+        # Change what equals for different attributes (0 through 3)
         if index == 2 or (index-2) % 4 == 0:
             demo_layer = QgsVectorLayer("MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory")
             demo_prov = demo_layer.dataProvider()
@@ -162,11 +161,12 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
 
             
             demo_layer.startEditing() # Acts as with edit(demo_layer), as that method does not work
-            demo_layer.deleteAttributes([27, 28, 29, 30])
+            demo_layer.deleteAttributes([27, 28, 29, 30]) # Makes sure these attributes are empty before filling them
             
             for feature in demo_layer.getFeatures():
                 zip_code = feature.attribute("ZCTA5")
                 
+                # Makes sure there is data for a zip code and the attribute does not already exist in the fields
                 if (zip_code in data.keys()) and (attribute_name not in demo_fields.names()):
                     feat_id = feature.id()
                     new_feat = demo_layer.getFeature(feat_id)
@@ -176,6 +176,8 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                         new_feat.resizeAttributes(31)
                         features_size = new_feat.fields().size()
                     
+                    # Adds the group of four attributes to the zip code
+                    # If the index statement was changed above, the values in range will also need to be changed
                     for i in range(-2, 2):
                         if attributes[index+i] == "ZCTA":
                             break
@@ -186,16 +188,14 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                         
                         if field_idx == -1 and features_size == 27:
                             new_feat.setAttribute(features_size+i, value)
-                            # logging.info(f"first, {feat_id}, {field_idx}, {features_size+i}, {attributes[index+i]}, {value}, {new_feat.attribute(features_size+i)}")
                         elif field_idx == -1 and not features_size == 27:
                             new_feat.setAttribute(features_size+i-4, value)
-                            # logging.info(f"second, {feat_id}, {field_idx}, {features_size+i-4}, {attributes[index+i]}, {value}, {new_feat.attribute(features_size+i-4)}")
                         else:
                             new_feat.setAttribute(field_idx, value)
-                            # logging.info(f"third, {feat_id}, {field_idx}, {features_size+i}, {attributes[index+i]}, {value}, {new_feat.attribute(field_idx)}")
                     
                     demo_layer.updateFeature(new_feat)
             
+            # Colors the zip codes per the selected attribute's value
             try:
                 unique_values = demo_layer.uniqueValues(demo_layer.fields().indexOf(attribute_name))
                 new_uniques = []
@@ -211,7 +211,6 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                             continue
                 unique_max = max(new_uniques)
                 unique_min = min(new_uniques)
-                # logging.info(f"{attribute_name = }, {unique_max = }, {unique_min = }")
                 color_ramp = QgsGradientColorRamp(QColor(255,255,255,160), QColor(0,0,255,160))
                 
                 renderer = QgsCategorizedSymbolRenderer(attribute_name)
@@ -219,7 +218,6 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
                     symbol = QgsSymbol.defaultSymbol(demo_layer.geometryType())
                     layer = symbol.symbolLayer(0)
                     translated_val = translate(value, unique_min, unique_max, 0, 1)
-                    # logging.info(f"{unique_min = }, {unique_max = }, {value = }, {translated_val = }")
                     layer.setColor(color_ramp.color(translated_val))
                     category = QgsRendererCategory(value, symbol, str(value))
                     renderer.addCategory(category)
@@ -229,8 +227,6 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
             
             # Add the layer to the Layer Tree
             demographic.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer))
-            
-            # Display the layer
             layers.append(demo_layer)
             
             # Used to limit number of layers generated for testing
@@ -238,7 +234,7 @@ def createDemographicLayers(attributes: typing.List[str], file_path: str, demogr
             logging.info(index)
             break
         
-# Used to map a value from one scale into another scale
+# Used to map a value from one scale to another scale
 def translate(value, fromMin, fromMax, toMin, toMax):
     fromSpan = fromMax - fromMin
     toSpan = toMax - toMin
@@ -252,6 +248,8 @@ def readFolder(directory: str):
     if directory.__contains__('housing'):
         first = True
         lines = []
+        
+        # Iterates through the folder and adds the lines from all csvs to the list lines
         for fileName in os.listdir(directory):
             fullFile = directory + os.sep + fileName
             path, type = os.path.splitext(fileName)
@@ -278,13 +276,11 @@ def readFolder(directory: str):
         try:
             # Extracts desired attribute names from the csv headers
             new_prov = createCSVLayers(lines, headers, layer)
-            attributes = list(itertools.dropwhile(lambda x : x != "LONGITUDE", headers))
-            attributes.remove("LONGITUDE")
+            attributes = list(itertools.dropwhile(lambda x : x != "Electricity", headers))
             createHeatmapLayers(new_prov, attributes, heating_layers)
         except Exception as e:
             logging.error(e)
             logging.error(traceback.format_exc())
-        # root.insertChildNode(0, QgsLayerTreeLayer(layer))
     
     # All files in the other folders, in the layers folder, will be processed individually
     else:
@@ -326,11 +322,13 @@ def readFolder(directory: str):
 heating_layers = QgsLayerTreeGroup("Heating Types")
 demographic_layers = QgsLayerTreeGroup("Demographic Info")
 
+# Calls to read specific folders within the layers folder
+# To read files in a new folder, add a new line with the folder to be read as the second parameter
 readFolder(os.path.join(folderDirectory, 'housing'))
 readFolder(os.path.join(folderDirectory, 'demographic'))
-# readFolder(os.path.join(folderDirectory, 'shapefiles'))
 
 heating_layers.updateChildVisibilityMutuallyExclusive()
+# project.instance().addMapLayer(heating_layers)
 root.insertChildNode(1, heating_layers)
 demographic_layers.updateChildVisibilityMutuallyExclusive()
 root.insertChildNode(2, demographic_layers)
