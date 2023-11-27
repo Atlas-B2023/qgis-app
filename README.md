@@ -8,8 +8,8 @@ Copy the file called symbology-style.db from this folder, and paste it in the lo
 
 
 ## Setting up System Environments
-[!NOTE]
-This is just for development. If you are not changing or adding to this project, you do not need to follow these steps.
+>[!NOTE]
+>This is just for development. If you are not changing or adding to this project, you do not need to follow these steps.
 
 There are a few paths that need to be set up within the system environment. The following steps will guide you through how:
 1. Within the taskbar seach bar, search for environment variables and click on the one that says "Edit the systems environment variables."
