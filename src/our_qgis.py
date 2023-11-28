@@ -371,9 +371,9 @@ def create_demographic_layers(
         layers.append(demo_layer)
 
         # Used to limit number of layers generated for testing
-        if index == 6:
-            logging.info(index)
-            break
+        # if index == 6:
+        #     logging.info(index)
+        #     break
 
 
 # Used to map a value from one scale to another scale
