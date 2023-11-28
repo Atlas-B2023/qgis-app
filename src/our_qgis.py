@@ -184,9 +184,74 @@ def create_demographic_layers(
 
     # Create a layer for each attribute in heating_attributes
     for index, attribute_name in enumerate(attributes):
-        # Limits the layers to only percentage attributes, with the other attributes still being attached to the zip code
-        # Change what equals for different attributes (0 through 3)
-        if index == 2 or (index - 2) % 4 == 0:
+        # Determines how the headers should be grouped (DP05 in groups of 4, S1901 in groups of 2, etc.)
+        # If reading a csv with a new format, copy one if statement and be sure to modify the values in range()
+        # Csvs with groups larger than 4 will need to be modified further, by modifying the values in:
+        # demo_layer.deleteAttributes(), new_feat.resizeAttributes(), and new_feat.setAttribute()
+        if "EST" in attribute_name and "S" in file_path.stem:
+            demo_layer = QgsVectorLayer(
+                "MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory"
+            )
+            demo_prov = demo_layer.dataProvider()
+            original_fields = base_layer.fields()
+            demo_prov.addAttributes(original_fields.toList())
+
+            demo_layer.triggerRepaint()
+            demo_fields = demo_prov.fields()
+
+            demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
+            for ftr in base_layer.getFeatures():
+                new_ftr = QgsFeature()
+                new_ftr.setGeometry(ftr.geometry())
+                new_ftr.setAttributes(ftr.attributes())
+                demo_layer.addFeature(new_ftr)
+            demo_layer.loadNamedStyle(base_layer.styleURI())
+            demo_layer.styleManager().copyStylesFrom(base_layer.styleManager())
+
+            demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
+            demo_layer.deleteAttributes(
+                [27, 28, 29, 30]
+            )  # Makes sure these attributes are empty before filling them
+
+            for feature in demo_layer.getFeatures():
+                zip_code = feature.attribute("ZCTA5")
+
+                # Makes sure there is data for a zip code and the attribute does not already exist in the fields
+                if (zip_code in data.keys()) and (
+                    attribute_name not in demo_fields.names()
+                ):
+                    feat_id = feature.id()
+                    new_feat = demo_layer.getFeature(feat_id)
+                    features_size = new_feat.fields().size()
+
+                    if features_size == 27:
+                        new_feat.resizeAttributes(31)
+                        features_size = new_feat.fields().size()
+
+                    # Adds the group of four attributes to the zip code
+                    # If the index statement was changed above, the values in range will also need to be changed
+                    for i in range(0, 2):
+                        if attributes[index + i] == "ZCTA":
+                            break
+                        demo_layer.addAttribute(
+                            QgsField(attributes[index + i], QVariant.String)
+                        )
+                        new_feat.fields().append(
+                            QgsField(attributes[index + i], QVariant.String),
+                            originIndex=features_size + i,
+                        )
+                        field_idx = new_feat.fields().indexOf(attributes[index + i])
+                        value = data[zip_code].get(attributes[index + i]).strip()
+
+                        if field_idx == -1 and features_size == 27:
+                            new_feat.setAttribute(features_size + i, value)
+                        elif field_idx == -1 and not features_size == 27:
+                            new_feat.setAttribute(features_size + i - 4, value)
+                        else:
+                            new_feat.setAttribute(field_idx, value)
+
+                    demo_layer.updateFeature(new_feat)
+        elif "PCT" in attribute_name and "DP" in file_path.stem:
             demo_layer = QgsVectorLayer(
                 "MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory"
             )
@@ -249,51 +314,53 @@ def create_demographic_layers(
                             new_feat.setAttribute(field_idx, value)
 
                     demo_layer.updateFeature(new_feat)
+        else:
+            continue
 
-            # Colors the zip codes per the selected attribute's value
-            try:
-                unique_values = demo_layer.uniqueValues(
-                    demo_layer.fields().indexOf(attribute_name)
-                )
-                new_uniques = []
-                for value in unique_values:
-                    if value is not None:
-                        try:
-                            formatted_val = float(value)
-                            if formatted_val < 0.0:
-                                continue
-                            else:
-                                new_uniques.append(formatted_val)
-                        except:
-                            continue
-                unique_max = max(new_uniques)
-                unique_min = min(new_uniques)
-                color_ramp = QgsGradientColorRamp(
-                    QColor(255, 255, 255, 160), QColor(0, 0, 255, 160)
-                )
-
-                renderer = QgsCategorizedSymbolRenderer(attribute_name)
-                for value in new_uniques:
-                    symbol = QgsSymbol.defaultSymbol(demo_layer.geometryType())
-                    layer = symbol.symbolLayer(0)
-                    translated_val = translate(value, unique_min, unique_max, 0, 1)
-                    layer.setColor(color_ramp.color(translated_val))
-                    category = QgsRendererCategory(value, symbol, str(value))
-                    renderer.addCategory(category)
-                demo_layer.setRenderer(renderer)
-            except Exception:
-                logging.error(traceback.format_exc())
-
-            # Add the layer to the Layer Tree
-            demographic.insertChildNode(
-                attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer)
+        # Colors the zip codes per the selected attribute's value
+        try:
+            unique_values = demo_layer.uniqueValues(
+                demo_layer.fields().indexOf(attribute_name)
             )
-            layers.append(demo_layer)
+            new_uniques = []
+            for value in unique_values:
+                if value is not None:
+                    try:
+                        formatted_val = float(value)
+                        if formatted_val < 0.0:
+                            continue
+                        else:
+                            new_uniques.append(formatted_val)
+                    except:
+                        continue
+            unique_max = max(new_uniques)
+            unique_min = min(new_uniques)
+            color_ramp = QgsGradientColorRamp(
+                QColor(255, 255, 255, 160), QColor(0, 0, 255, 160)
+            )
 
-            # Used to limit number of layers generated for testing
-        # if index == 6:
-        #     logging.info(index)
-        #     break
+            renderer = QgsCategorizedSymbolRenderer(attribute_name)
+            for value in new_uniques:
+                symbol = QgsSymbol.defaultSymbol(demo_layer.geometryType())
+                layer = symbol.symbolLayer(0)
+                translated_val = translate(value, unique_min, unique_max, 0, 1)
+                layer.setColor(color_ramp.color(translated_val))
+                category = QgsRendererCategory(value, symbol, str(value))
+                renderer.addCategory(category)
+            demo_layer.setRenderer(renderer)
+        except Exception:
+            logging.error(traceback.format_exc())
+
+        # Add the layer to the Layer Tree
+        demographic.insertChildNode(
+            attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer)
+        )
+        layers.append(demo_layer)
+
+        # Used to limit number of layers generated for testing
+        if index == 6:
+            logging.info(index)
+            break
 
 
 # Used to map a value from one scale to another scale
