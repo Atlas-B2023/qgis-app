@@ -18,11 +18,19 @@ from pathlib import Path
 # Grab the directory of the qgis project and parent folder of the project
 project_directory = os.path.dirname(QgsProject.instance().fileName())
 parent_directory = os.path.dirname(project_directory)
+#recurse
 METRO_DIRECTORY = (
     Path(__file__).parent.parent.parent
     / "ResidentialElectrificationTracker"
     / "output"
     / "metro_data"
+)
+#do not recurse
+CENSUS_DIRECTORY = (
+    Path(__file__).parent.parent.parent
+    / "ResidentialElectrificationTracker"
+    / "output"
+    / "census_data"
 )
 
 # Set up project log file
@@ -161,10 +169,10 @@ def createHeatmapLayers(
 
 # Used to create heatmap layers from csv demographic data
 def createDemographicLayers(
-    attributes: typing.List[str], file_path: str, demographic: QgsLayerTreeGroup
+    attributes: typing.List[str], file_path: Path, demographic: QgsLayerTreeGroup
 ) -> None:
     # Create a dictionary of demographic variables as related to zipcodes
-    with open(file_path, newline="") as csvfile:
+    with open(file_path, encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
         data = {row["ZCTA"]: {attr: row[attr] for attr in attributes} for row in reader}
 
@@ -303,7 +311,11 @@ def read_housing_data(directory: Path):
     merged_csv_contents = []
     headers = []
     zip_code_csv_regex = re.compile(r"[0-9]{3}|[0-9]{4}|[0-9]{5}")
-    csv_files = [path for path in directory.rglob("*.csv") if zip_code_csv_regex.match(path.stem) is not None]    
+    csv_files = [
+        path
+        for path in directory.rglob("*.csv")
+        if zip_code_csv_regex.match(path.stem) is not None
+    ]
     logging.info(f"{csv_files=}")
     for zip_file in csv_files:
         with open(zip_file, "r", encoding="utf-8") as f:
@@ -312,7 +324,7 @@ def read_housing_data(directory: Path):
                 first = False
                 headers = lines[0].split(",")
             # shouldnt error as each csv should only be created if data exsists (2 lines min)
-            merged_csv_contents.extend(lines[1:])
+            merged_csv_contents.extend(lines)
 
         logging.info(f"{headers =}")
     # Create the csv path (csv_info) and add the csv headers to the path
@@ -332,40 +344,37 @@ def read_housing_data(directory: Path):
         logging.error(traceback.format_exc())
 
 
-def read_demographics_data(directory: str):
+def read_demographics_data(directory: Path):
     # All files in the other folders, in the layers folder, will be processed individually
-    for fileName in os.listdir(directory):
-        fullFile = directory + os.sep + fileName
-        path, type = os.path.splitext(fileName)
+    for file_path in directory.glob("*.csv"):
+    #create vector layer from csv files
+        headers = []
+        with open(file_path, "r", encoding="utf-8") as f:
+            headers = f.readline().strip("\r\n").split(",")
 
-        # Create a vector layer from shape files
-        if fileName.endswith(".shp"):
-            layer = QgsVectorLayer(fullFile, fileName, "ogr")
+        try:
+            headers.remove("GEO_ID")
+        except ValueError:
+            logging.warn(f"{file_path} doesn't have geoid")
+        try:
+            headers.remove("STATE_FIPS")
+        except ValueError:
+            logging.warn(f"{file_path} doesn't have statefips")
+        try:
+            headers.remove("state")
+        except ValueError:
+            logging.warn(f"{file_path} doesn't have state")
+        
+        createDemographicLayers(headers, file_path, demographic_layers)
 
-            # Attempt to add the layer
-            try:
-                layers.append(layer)
-                project.instance().addMapLayer(layer)
-            except:
-                logging.warning("Layer " + fileName + " failed to load!")
-
-        # Create vector layers from csv files
-        elif fileName.endswith(".csv"):
-            # Store the headers of the csv file
-            with open(fullFile, "r", newline="") as file:
-                reader = csv.reader(file)
-                headers = next(reader)
-                headers = [header.strip() for header in headers]
-
-            try:
-                # Extracts desired attribute names from the csv headers
-                attributes = headers
-                attributes.remove("GEO_ID")
-                attributes.remove("STATE_FIPS")
-                createDemographicLayers(attributes, fullFile, demographic_layers)
-            except Exception as e:
-                logging.error(e)
-                logging.error(traceback.format_exc())
+def read_shape_file(directory: Path):
+    for file_path in directory.glob("*.shp"):
+        layer = QgsVectorLayer(file_path, file_path.stem, "ogr")
+        try:
+            layers.append(layer)
+            project.instance().addMapLayer(layer)
+        except:
+            logging.warning("Layer " + file_path.stem + " failed to load!")
 
 
 # Create layer groups for heating information and demographic information
@@ -375,7 +384,8 @@ demographic_layers = QgsLayerTreeGroup("Demographic Info")
 # Calls to read specific folders within the layers folder
 # To read files in a new folder, add a new line with the folder to be read as the second parameter
 read_housing_data(METRO_DIRECTORY)
-read_demographics_data(os.path.join(folderDirectory, "demographic"))
+read_demographics_data(CENSUS_DIRECTORY)
+#shapefile?
 
 heating_layers.updateChildVisibilityMutuallyExclusive()
 root.insertChildNode(1, heating_layers)
