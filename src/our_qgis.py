@@ -10,6 +10,7 @@ import typing
 import itertools
 import traceback
 from pathlib import Path
+import os
 
 # Keep in mind that this program will be running with python 3.9
 
@@ -67,7 +68,7 @@ layers = []
 
 
 # Used to create a point layer from csv data
-def createCSVLayers(
+def create_csv_layers(
     lines: typing.List[str], headers: typing.List[str], housing_layer: QgsVectorLayer
 ) -> QgsVectorDataProvider:
     prov = housing_layer.dataProvider()
@@ -106,7 +107,7 @@ def createCSVLayers(
 
 
 # Used to create heatmap layers from csv heating data
-def createHeatmapLayers(
+def create_heatmap_layers(
     prov: QgsVectorDataProvider,
     attributes: typing.List[str],
     heating_layers: QgsLayerTreeGroup,
@@ -168,7 +169,7 @@ def createHeatmapLayers(
 
 
 # Used to create heatmap layers from csv demographic data
-def createDemographicLayers(
+def create_demographic_layers(
     attributes: typing.List[str], file_path: Path, demographic: QgsLayerTreeGroup
 ) -> None:
     # Create a dictionary of demographic variables as related to zipcodes
@@ -290,9 +291,9 @@ def createDemographicLayers(
             layers.append(demo_layer)
 
             # Used to limit number of layers generated for testing
-        if index == 6:
-            logging.info(index)
-            break
+        # if index == 6:
+        #     logging.info(index)
+        #     break
 
 
 # Used to map a value from one scale to another scale
@@ -336,15 +337,15 @@ def read_housing_data(directory: Path):
 
     try:
         # Extracts desired attribute names from the csv headers
-        new_prov = createCSVLayers(merged_csv_contents, headers, layer)
+        new_prov = create_csv_layers(merged_csv_contents, headers, layer)
         attributes = list(itertools.dropwhile(lambda x: x != "Electricity", headers))
-        createHeatmapLayers(new_prov, attributes, heating_layers)
+        create_heatmap_layers(new_prov, attributes, heating_layers)
     except Exception as e:
         logging.error(e)
         logging.error(traceback.format_exc())
 
 
-def read_demographics_data(directory: Path):
+def read_demographic_data(directory: Path):
     # All files in the other folders, in the layers folder, will be processed individually
     for file_path in directory.glob("*.csv"):
         # create vector layer from csv files
@@ -365,7 +366,7 @@ def read_demographics_data(directory: Path):
         except ValueError:
             logging.warn(f"{file_path} doesn't have state")
 
-        createDemographicLayers(headers, file_path, demographic_layers)
+        create_demographic_layers(headers, file_path, demographic_layers)
 
 
 def read_shape_file(directory: Path):
@@ -374,7 +375,7 @@ def read_shape_file(directory: Path):
         try:
             layers.append(layer)
             project.instance().addMapLayer(layer)
-        except:
+        except Exception:
             logging.warning("Layer " + file_path.stem + " failed to load!")
 
 
@@ -385,7 +386,7 @@ demographic_layers = QgsLayerTreeGroup("Demographic Info")
 # Calls to read specific folders within the layers folder
 # To read files in a new folder, add a new line with the folder to be read as the second parameter
 read_housing_data(METRO_DIRECTORY)
-read_demographics_data(CENSUS_DIRECTORY)
+read_demographic_data(CENSUS_DIRECTORY)
 # shapefile?
 
 heating_layers.updateChildVisibilityMutuallyExclusive()
