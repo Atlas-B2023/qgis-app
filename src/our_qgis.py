@@ -18,14 +18,14 @@ from pathlib import Path
 # Grab the directory of the qgis project and parent folder of the project
 project_directory = os.path.dirname(QgsProject.instance().fileName())
 parent_directory = os.path.dirname(project_directory)
-#recurse
+# recurse
 METRO_DIRECTORY = (
     Path(__file__).parent.parent.parent
     / "ResidentialElectrificationTracker"
     / "output"
     / "metro_data"
 )
-#do not recurse
+# do not recurse
 CENSUS_DIRECTORY = (
     Path(__file__).parent.parent.parent
     / "ResidentialElectrificationTracker"
@@ -347,7 +347,7 @@ def read_housing_data(directory: Path):
 def read_demographics_data(directory: Path):
     # All files in the other folders, in the layers folder, will be processed individually
     for file_path in directory.glob("*.csv"):
-    #create vector layer from csv files
+        # create vector layer from csv files
         headers = []
         with open(file_path, "r", encoding="utf-8") as f:
             headers = f.readline().strip("\r\n").split(",")
@@ -364,8 +364,9 @@ def read_demographics_data(directory: Path):
             headers.remove("state")
         except ValueError:
             logging.warn(f"{file_path} doesn't have state")
-        
+
         createDemographicLayers(headers, file_path, demographic_layers)
+
 
 def read_shape_file(directory: Path):
     for file_path in directory.glob("*.shp"):
@@ -385,7 +386,7 @@ demographic_layers = QgsLayerTreeGroup("Demographic Info")
 # To read files in a new folder, add a new line with the folder to be read as the second parameter
 read_housing_data(METRO_DIRECTORY)
 read_demographics_data(CENSUS_DIRECTORY)
-#shapefile?
+# shapefile?
 
 heating_layers.updateChildVisibilityMutuallyExclusive()
 root.insertChildNode(1, heating_layers)
