@@ -71,16 +71,29 @@ layers = []
 def create_csv_layers(
     lines: typing.List[str], headers: typing.List[str], housing_layer: QgsVectorLayer
 ) -> QgsVectorDataProvider:
+    """generate csv layers
+
+    Args:
+        lines (typing.List[str]): csv content. do not include headers
+        headers (typing.List[str]): headers
+        housing_layer (QgsVectorLayer): _description_
+
+    Returns:
+        QgsVectorDataProvider: _description_
+    """
     prov = housing_layer.dataProvider()
     fields = prov.fields()
     feats = []
-
+    logging.info(f"{lines[0] = }")
+    logging.info(f"{lines[1:5] = }")
+    
     # expecting lines to include header
-    for line in lines[1:]:
+    for line in lines:
         if not line.strip():
             continue
         values = line.split(",")
         feat = QgsFeature(fields)
+        
         feat.setGeometry(
             QgsGeometry.fromPointXY(
                 QgsPointXY(
@@ -384,7 +397,7 @@ def read_housing_data(directory: Path):
         for path in directory.rglob("*.csv")
         if zip_code_csv_regex.match(path.stem) is not None
     ]
-    logging.info(f"{csv_files=}")
+    
     for zip_file in csv_files:
         with open(zip_file, "r", encoding="utf-8") as f:
             lines = [line.strip("\r\n") for line in f.readlines()]
@@ -392,9 +405,8 @@ def read_housing_data(directory: Path):
                 first = False
                 headers = lines[0].split(",")
             # shouldnt error as each csv should only be created if data exsists (2 lines min)
-            merged_csv_contents.extend(lines)
-
-        logging.info(f"{headers =}")
+            merged_csv_contents.extend(lines[1:])
+            
     # Create the csv path (csv_info) and add the csv headers to the path
     csv_info = "Point?crs=EPSG:4326"
 
