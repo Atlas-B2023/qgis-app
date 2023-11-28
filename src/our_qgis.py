@@ -34,6 +34,22 @@ CENSUS_DIRECTORY = (
     / "census_data"
 )
 
+DP05_ALLOW_LIST = ["PCTTotalHousingUnits"
+                ,"PCTSexAndAgeTPOP"
+                ,"PCTSexAndAgeTPOPMedianAge(years)"
+                ,"PCTSexAndAgeTPOPUnder18Years"
+                ,"PCTSexAndAgeTPOP16Yearsplus"
+                ,"PCTSexAndAgeTPOP18Yearsplus"
+                ,"PCTSexAndAgeTPOP21Yearsplus"
+                ,"PCTSexAndAgeTPOP62Yearsplus"
+                ,"PCTSexAndAgeTPOP65Yearsplus"
+                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_W_"
+                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_B_"
+                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_A_"
+                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_S_"
+                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_P_"
+                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_O_"]
+
 # Set up project log file
 log_file_path = os.path.join(parent_directory, "qgisdebug.log")
 logging.basicConfig(
@@ -84,8 +100,6 @@ def create_csv_layers(
     prov = housing_layer.dataProvider()
     fields = prov.fields()
     feats = []
-    logging.info(f"{lines[0] = }")
-    logging.info(f"{lines[1:5] = }")
     
     # expecting lines to include header
     for line in lines:
@@ -183,7 +197,7 @@ def create_heatmap_layers(
 
 # Used to create heatmap layers from csv demographic data
 def create_demographic_layers(
-    attributes: typing.List[str], file_path: Path, demographic: QgsLayerTreeGroup
+    attributes: typing.List[str], file_path: Path, demographic: QgsLayerTreeGroup, idx: int
 ) -> None:
     # Create a dictionary of demographic variables as related to zipcodes
     with open(file_path, encoding="utf-8") as csvfile:
@@ -194,14 +208,17 @@ def create_demographic_layers(
         if layer.name() == "BaseLayerDB — Zips_in_Metros":
             base_layer = layer.clone()
             break
-
+        
+    csv_groups = QgsLayerTreeGroup(f"{file_path.stem}")
+    
     # Create a layer for each attribute in heating_attributes
     for index, attribute_name in enumerate(attributes):
         # Determines how the headers should be grouped (DP05 in groups of 4, S1901 in groups of 2, etc.)
         # If reading a csv with a new format, copy one if statement and be sure to modify the values in range()
         # Csvs with groups larger than 4 will need to be modified further, by modifying the values in:
         # demo_layer.deleteAttributes(), new_feat.resizeAttributes(), and new_feat.setAttribute()
-        if "EST" in attribute_name and "S" in file_path.stem:
+        if "S1901" in file_path.stem and "famil" not in attribute_name.lower() and "EST" in attribute_name:
+            logging.info(f"{attribute_name = }")
             demo_layer = QgsVectorLayer(
                 "MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory"
             )
@@ -264,7 +281,8 @@ def create_demographic_layers(
                             new_feat.setAttribute(field_idx, value)
 
                     demo_layer.updateFeature(new_feat)
-        elif "PCT" in attribute_name and "DP" in file_path.stem:
+        elif "DP05" in file_path.stem and attribute_name in DP05_ALLOW_LIST and "PCT" in attribute_name:
+            logging.info(f"{attribute_name = }")
             demo_layer = QgsVectorLayer(
                 "MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory"
             )
@@ -340,14 +358,22 @@ def create_demographic_layers(
                 if value is not None:
                     try:
                         formatted_val = float(value)
-                        if formatted_val < 0.0:
-                            continue
-                        else:
-                            new_uniques.append(formatted_val)
                     except:
                         continue
-            unique_max = max(new_uniques)
-            unique_min = min(new_uniques)
+                    if formatted_val < 0.0:
+                        continue
+                    else:
+                        new_uniques.append(formatted_val)
+            if len(new_uniques) == 0:
+                continue
+            try:
+                unique_max = max(new_uniques)
+            except ValueError:
+                logging.warning(f"failed max: {unique_values = }, {attribute_name = }")
+            try:
+                unique_min = min(new_uniques)
+            except ValueError:
+                logging.warning(f"failed min: {unique_values = }, {attribute_name = }")
             color_ramp = QgsGradientColorRamp(
                 QColor(255, 255, 255, 160), QColor(0, 0, 255, 160)
             )
@@ -365,15 +391,16 @@ def create_demographic_layers(
             logging.error(traceback.format_exc())
 
         # Add the layer to the Layer Tree
-        demographic.insertChildNode(
-            attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer)
-        )
+        csv_groups.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer))
+        csv_groups.updateChildVisibilityMutuallyExclusive()
+        
         layers.append(demo_layer)
 
         # Used to limit number of layers generated for testing
         # if index == 6:
         #     logging.info(index)
         #     break
+    demographic.insertChildNode(idx, csv_groups)
 
 
 # Used to map a value from one scale to another scale
@@ -426,7 +453,7 @@ def read_housing_data(directory: Path):
 
 def read_demographic_data(directory: Path):
     # All files in the other folders, in the layers folder, will be processed individually
-    for file_path in directory.glob("*.csv"):
+    for idx, file_path in enumerate(directory.glob("*.csv")):
         # create vector layer from csv files
         headers = []
         with open(file_path, "r", encoding="utf-8") as f:
@@ -445,7 +472,7 @@ def read_demographic_data(directory: Path):
         except ValueError:
             logging.warn(f"{file_path} doesn't have state")
 
-        create_demographic_layers(headers, file_path, demographic_layers)
+        create_demographic_layers(headers, file_path, demographic_layers, idx)
 
 
 def read_shape_file(directory: Path):
