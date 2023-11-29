@@ -34,21 +34,30 @@ CENSUS_DIRECTORY = (
     / "census_data"
 )
 
-DP05_ALLOW_LIST = ["PCTTotalHousingUnits"
-                ,"PCTSexAndAgeTPOP"
-                ,"PCTSexAndAgeTPOPMedianAge(years)"
-                ,"PCTSexAndAgeTPOPUnder18Years"
-                ,"PCTSexAndAgeTPOP16Yearsplus"
-                ,"PCTSexAndAgeTPOP18Yearsplus"
-                ,"PCTSexAndAgeTPOP21Yearsplus"
-                ,"PCTSexAndAgeTPOP62Yearsplus"
-                ,"PCTSexAndAgeTPOP65Yearsplus"
-                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_W_"
-                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_B_"
-                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_A_"
-                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_S_"
-                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_P_"
-                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_O_"]
+DP05_ALLOW_LIST = [
+    "PCTTotalHousingUnits",
+    "PCTSexAndAgeTPOP",
+    "PCTSexAndAgeTPOPMedianAge(years)",
+    "PCTSexAndAgeTPOPUnder18Years",
+    "PCTSexAndAgeTPOP16Yearsplus",
+    "PCTSexAndAgeTPOP18Yearsplus",
+    "PCTSexAndAgeTPOP21Yearsplus",
+    "PCTSexAndAgeTPOP62Yearsplus",
+    "PCTSexAndAgeTPOP65Yearsplus",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_W_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_B_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_A_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_S_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_P_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_O_"
+]
+
+S1501_ALLOW_LIST = [
+    "PCTPOP18to24yearsHighschoolgraduate(includesequivalency)",
+    "PCTPOP18to24yearsBachelorsdegreeorhigher",
+    "PCTPOP25yearsandoverHighschoolgraduate(includesequivalency)",
+    "PCTPOP25yearsandoverBachelorsdegreeorhigher"
+]
 
 # Set up project log file
 log_file_path = os.path.join(parent_directory, "qgisdebug.log")
@@ -217,134 +226,12 @@ def create_demographic_layers(
         # If reading a csv with a new format, copy one if statement and be sure to modify the values in range()
         # Csvs with groups larger than 4 will need to be modified further, by modifying the values in:
         # demo_layer.deleteAttributes(), new_feat.resizeAttributes(), and new_feat.setAttribute()
-        if "S1901" in file_path.stem and "famil" not in attribute_name.lower() and "EST" in attribute_name:
-            logging.info(f"{attribute_name = }")
-            demo_layer = QgsVectorLayer(
-                "MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory"
-            )
-            demo_prov = demo_layer.dataProvider()
-            original_fields = base_layer.fields()
-            demo_prov.addAttributes(original_fields.toList())
-
-            demo_layer.triggerRepaint()
-            demo_fields = demo_prov.fields()
-
-            demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
-            for ftr in base_layer.getFeatures():
-                new_ftr = QgsFeature()
-                new_ftr.setGeometry(ftr.geometry())
-                new_ftr.setAttributes(ftr.attributes())
-                demo_layer.addFeature(new_ftr)
-            demo_layer.loadNamedStyle(base_layer.styleURI())
-            demo_layer.styleManager().copyStylesFrom(base_layer.styleManager())
-
-            demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
-            demo_layer.deleteAttributes(
-                [27, 28, 29, 30]
-            )  # Makes sure these attributes are empty before filling them
-
-            for feature in demo_layer.getFeatures():
-                zip_code = feature.attribute("ZCTA5")
-
-                # Makes sure there is data for a zip code and the attribute does not already exist in the fields
-                if (zip_code in data.keys()) and (
-                    attribute_name not in demo_fields.names()
-                ):
-                    feat_id = feature.id()
-                    new_feat = demo_layer.getFeature(feat_id)
-                    features_size = new_feat.fields().size()
-
-                    if features_size == 27:
-                        new_feat.resizeAttributes(31)
-                        features_size = new_feat.fields().size()
-
-                    # Adds the group of four attributes to the zip code
-                    # If the index statement was changed above, the values in range will also need to be changed
-                    for i in range(0, 2):
-                        if attributes[index + i] == "ZCTA":
-                            break
-                        demo_layer.addAttribute(
-                            QgsField(attributes[index + i], QVariant.String)
-                        )
-                        new_feat.fields().append(
-                            QgsField(attributes[index + i], QVariant.String),
-                            originIndex=features_size + i,
-                        )
-                        field_idx = new_feat.fields().indexOf(attributes[index + i])
-                        value = data[zip_code].get(attributes[index + i]).strip()
-
-                        if field_idx == -1 and features_size == 27:
-                            new_feat.setAttribute(features_size + i, value)
-                        elif field_idx == -1 and not features_size == 27:
-                            new_feat.setAttribute(features_size + i - 4, value)
-                        else:
-                            new_feat.setAttribute(field_idx, value)
-
-                    demo_layer.updateFeature(new_feat)
+        if "S1501" in file_path.stem and attribute_name in S1501_ALLOW_LIST and "PCT" in attribute_name:
+            demo_layer = demographics_groups_of_four(attributes, attribute_name, base_layer, data, index)
+        elif "S1901" in file_path.stem and "famil" not in attribute_name.lower() and "EST" in attribute_name:
+            demo_layer = demographics_groups_of_two(attributes, attribute_name, base_layer, data, index)
         elif "DP05" in file_path.stem and attribute_name in DP05_ALLOW_LIST and "PCT" in attribute_name:
-            logging.info(f"{attribute_name = }")
-            demo_layer = QgsVectorLayer(
-                "MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory"
-            )
-            demo_prov = demo_layer.dataProvider()
-            original_fields = base_layer.fields()
-            demo_prov.addAttributes(original_fields.toList())
-
-            demo_layer.triggerRepaint()
-            demo_fields = demo_prov.fields()
-
-            demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
-            for ftr in base_layer.getFeatures():
-                new_ftr = QgsFeature()
-                new_ftr.setGeometry(ftr.geometry())
-                new_ftr.setAttributes(ftr.attributes())
-                demo_layer.addFeature(new_ftr)
-            demo_layer.loadNamedStyle(base_layer.styleURI())
-            demo_layer.styleManager().copyStylesFrom(base_layer.styleManager())
-
-            demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
-            demo_layer.deleteAttributes(
-                [27, 28, 29, 30]
-            )  # Makes sure these attributes are empty before filling them
-
-            for feature in demo_layer.getFeatures():
-                zip_code = feature.attribute("ZCTA5")
-
-                # Makes sure there is data for a zip code and the attribute does not already exist in the fields
-                if (zip_code in data.keys()) and (
-                    attribute_name not in demo_fields.names()
-                ):
-                    feat_id = feature.id()
-                    new_feat = demo_layer.getFeature(feat_id)
-                    features_size = new_feat.fields().size()
-
-                    if features_size == 27:
-                        new_feat.resizeAttributes(31)
-                        features_size = new_feat.fields().size()
-
-                    # Adds the group of four attributes to the zip code
-                    # If the index statement was changed above, the values in range will also need to be changed
-                    for i in range(-2, 2):
-                        if attributes[index + i] == "ZCTA":
-                            break
-                        demo_layer.addAttribute(
-                            QgsField(attributes[index + i], QVariant.String)
-                        )
-                        new_feat.fields().append(
-                            QgsField(attributes[index + i], QVariant.String),
-                            originIndex=features_size + i,
-                        )
-                        field_idx = new_feat.fields().indexOf(attributes[index + i])
-                        value = data[zip_code].get(attributes[index + i]).strip()
-
-                        if field_idx == -1 and features_size == 27:
-                            new_feat.setAttribute(features_size + i, value)
-                        elif field_idx == -1 and not features_size == 27:
-                            new_feat.setAttribute(features_size + i - 4, value)
-                        else:
-                            new_feat.setAttribute(field_idx, value)
-
-                    demo_layer.updateFeature(new_feat)
+            demo_layer = demographics_groups_of_four(attributes, attribute_name, base_layer, data, index)
         else:
             continue
 
@@ -401,6 +288,154 @@ def create_demographic_layers(
         #     logging.info(index)
         #     break
     demographic.insertChildNode(idx, csv_groups)
+
+
+# Creates heatmap layers for csvs that are grouped in twos
+def demographics_groups_of_two(
+    attributes: typing.List[str], 
+    attribute_name: str, 
+    base_layer: QgsVectorLayer, 
+    data: typing.Dict[str, typing.Dict[str, str]], 
+    index: int
+) -> None:
+    logging.info(f"{attribute_name = }")
+    demo_layer = QgsVectorLayer(
+        "MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory"
+    )
+    demo_prov = demo_layer.dataProvider()
+    original_fields = base_layer.fields()
+    demo_prov.addAttributes(original_fields.toList())
+
+    demo_layer.triggerRepaint()
+    demo_fields = demo_prov.fields()
+
+    demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
+    for ftr in base_layer.getFeatures():
+        new_ftr = QgsFeature()
+        new_ftr.setGeometry(ftr.geometry())
+        new_ftr.setAttributes(ftr.attributes())
+        demo_layer.addFeature(new_ftr)
+    demo_layer.loadNamedStyle(base_layer.styleURI())
+    demo_layer.styleManager().copyStylesFrom(base_layer.styleManager())
+
+    demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
+    demo_layer.deleteAttributes(
+        [27, 28, 29, 30]
+    )  # Makes sure these attributes are empty before filling them
+
+    for feature in demo_layer.getFeatures():
+        zip_code = feature.attribute("ZCTA5")
+
+        # Makes sure there is data for a zip code and the attribute does not already exist in the fields
+        if (zip_code in data.keys()) and (
+            attribute_name not in demo_fields.names()
+        ):
+            feat_id = feature.id()
+            new_feat = demo_layer.getFeature(feat_id)
+            features_size = new_feat.fields().size()
+
+            if features_size == 27:
+                new_feat.resizeAttributes(31)
+                features_size = new_feat.fields().size()
+
+            # Adds the group of four attributes to the zip code
+            # If the index statement was changed above, the values in range will also need to be changed
+            for i in range(0, 2):
+                if attributes[index + i] == "ZCTA":
+                    break
+                demo_layer.addAttribute(
+                    QgsField(attributes[index + i], QVariant.String)
+                )
+                new_feat.fields().append(
+                    QgsField(attributes[index + i], QVariant.String),
+                    originIndex=features_size + i,
+                )
+                field_idx = new_feat.fields().indexOf(attributes[index + i])
+                value = data[zip_code].get(attributes[index + i]).strip()
+
+                if field_idx == -1 and features_size == 27:
+                    new_feat.setAttribute(features_size + i, value)
+                elif field_idx == -1 and not features_size == 27:
+                    new_feat.setAttribute(features_size + i - 4, value)
+                else:
+                    new_feat.setAttribute(field_idx, value)
+
+            demo_layer.updateFeature(new_feat)
+    return demo_layer
+
+
+# Creates heatmap layers for csvs that are grouped in fours
+def demographics_groups_of_four(
+    attributes: typing.List[str], 
+    attribute_name: str, 
+    base_layer: QgsVectorLayer, 
+    data: typing.Dict[str, typing.Dict[str, str]], 
+    index: int
+) -> None:
+    logging.info(f"{attribute_name = }")
+    demo_layer = QgsVectorLayer(
+        "MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory"
+    )
+    demo_prov = demo_layer.dataProvider()
+    original_fields = base_layer.fields()
+    demo_prov.addAttributes(original_fields.toList())
+
+    demo_layer.triggerRepaint()
+    demo_fields = demo_prov.fields()
+
+    demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
+    for ftr in base_layer.getFeatures():
+        new_ftr = QgsFeature()
+        new_ftr.setGeometry(ftr.geometry())
+        new_ftr.setAttributes(ftr.attributes())
+        demo_layer.addFeature(new_ftr)
+    demo_layer.loadNamedStyle(base_layer.styleURI())
+    demo_layer.styleManager().copyStylesFrom(base_layer.styleManager())
+
+    demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
+    demo_layer.deleteAttributes(
+        [27, 28, 29, 30]
+    )  # Makes sure these attributes are empty before filling them
+
+    for feature in demo_layer.getFeatures():
+        zip_code = feature.attribute("ZCTA5")
+
+        # Makes sure there is data for a zip code and the attribute does not already exist in the fields
+        if (zip_code in data.keys()) and (
+            attribute_name not in demo_fields.names()
+        ):
+            feat_id = feature.id()
+            new_feat = demo_layer.getFeature(feat_id)
+            features_size = new_feat.fields().size()
+
+            if features_size == 27:
+                new_feat.resizeAttributes(31)
+                features_size = new_feat.fields().size()
+
+            # Adds the group of four attributes to the zip code
+            # If the index statement was changed above, the values in range will also need to be changed
+            for i in range(-2, 2):
+                if attributes[index + i] == "ZCTA":
+                    break
+                demo_layer.addAttribute(
+                    QgsField(attributes[index + i], QVariant.String)
+                )
+                new_feat.fields().append(
+                    QgsField(attributes[index + i], QVariant.String),
+                    originIndex=features_size + i,
+                )
+                field_idx = new_feat.fields().indexOf(attributes[index + i])
+                value = data[zip_code].get(attributes[index + i]).strip()
+
+                if field_idx == -1 and features_size == 27:
+                    new_feat.setAttribute(features_size + i, value)
+                elif field_idx == -1 and not features_size == 27:
+                    new_feat.setAttribute(features_size + i - 4, value)
+                else:
+                    new_feat.setAttribute(field_idx, value)
+
+            demo_layer.updateFeature(new_feat)
+    return demo_layer
 
 
 # Used to map a value from one scale to another scale
