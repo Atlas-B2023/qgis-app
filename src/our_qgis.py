@@ -1,7 +1,23 @@
 import re
-from qgis.core import *
-from qgis.gui import *
-from qgis.utils import *
+from qgis.core import (
+    QgsApplication,
+    QgsProject,
+    QgsVectorLayer,
+    QgsGeometry,
+    QgsPointXY,
+    QgsVectorFileWriter,
+    QgsVectorDataProvider,
+    QgsHeatmapRenderer,
+    QgsGradientColorRamp,
+    QgsFeature,
+    QgsLayerTreeLayer,
+    QgsLayerTreeGroup,
+    QgsField,
+    QgsRendererCategory,
+    QgsCategorizedSymbolRenderer,
+    QgsSymbol,
+    QgsCoordinateReferenceSystem,
+)
 from PyQt5.QtCore import QVariant
 from qgis.PyQt.QtGui import QColor
 import logging
@@ -10,15 +26,17 @@ import typing
 import itertools
 import traceback
 from pathlib import Path
-import os
 
 # Keep in mind that this program will be running with python 3.9
 
 # qgis = importlib.util.spec_from_file_location("qgis", "C:\Program Files\QGIS 3.34.0\apps\qgis\python\qgis")
 
 # Grab the directory of the qgis project and parent folder of the project
-project_directory = os.path.dirname(QgsProject.instance().fileName())
-parent_directory = os.path.dirname(project_directory)
+#! this should be a sibling folder to the two repository folders
+PROJECT_DIRECTORY = Path(__file__).parent.parent
+PARENT_DIRECTORY = PROJECT_DIRECTORY.parent
+# project_directory = os.path.dirname(QgsProject.instance().fileName())
+# parent_directory = os.path.dirname(PROJECT_DIRECTORY)
 # recurse
 METRO_DIRECTORY = (
     Path(__file__).parent.parent.parent
@@ -33,25 +51,34 @@ CENSUS_DIRECTORY = (
     / "output"
     / "census_data"
 )
+LAYERS_DIRECTORY = (
+    Path(__file__).parent.parent.parent
+    / "ResidentialElectrificationTracker"
+    / "output"
+    / "qgis_layers"
+)
+LAYERS_DIRECTORY.mkdir(parents=True, exist_ok=True)
 
-DP05_ALLOW_LIST = ["PCTTotalHousingUnits"
-                ,"PCTSexAndAgeTPOP"
-                ,"PCTSexAndAgeTPOPMedianAge(years)"
-                ,"PCTSexAndAgeTPOPUnder18Years"
-                ,"PCTSexAndAgeTPOP16Yearsplus"
-                ,"PCTSexAndAgeTPOP18Yearsplus"
-                ,"PCTSexAndAgeTPOP21Yearsplus"
-                ,"PCTSexAndAgeTPOP62Yearsplus"
-                ,"PCTSexAndAgeTPOP65Yearsplus"
-                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_W_"
-                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_B_"
-                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_A_"
-                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_S_"
-                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_P_"
-                ,"PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_O_"]
+DP05_ALLOW_LIST = [
+    "PCTTotalHousingUnits",
+    "PCTSexAndAgeTPOP",
+    "PCTSexAndAgeTPOPMedianAge(years)",
+    "PCTSexAndAgeTPOPUnder18Years",
+    "PCTSexAndAgeTPOP16Yearsplus",
+    "PCTSexAndAgeTPOP18Yearsplus",
+    "PCTSexAndAgeTPOP21Yearsplus",
+    "PCTSexAndAgeTPOP62Yearsplus",
+    "PCTSexAndAgeTPOP65Yearsplus",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_W_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_B_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_A_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_S_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_P_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_O_",
+]
 
 # Set up project log file
-log_file_path = os.path.join(parent_directory, "qgisdebug.log")
+log_file_path = PARENT_DIRECTORY / "qgisdebug.log"
 logging.basicConfig(
     filename=log_file_path,
     level=logging.DEBUG,
@@ -60,11 +87,11 @@ logging.basicConfig(
 logging.info("========================================================================")
 
 # Attempt to retrieve the path to the qgis-app and layers folders
-try:
-    scriptDirectory = os.path.join(parent_directory, "qgis-app")
-    folderDirectory = os.path.join(scriptDirectory, "layers")
-except Exception as e:
-    logging.exception("Exception occurred: " + str(e))
+scriptDirectory = PARENT_DIRECTORY / "qgis-app"
+folderDirectory = scriptDirectory / "layers"
+
+if not scriptDirectory.exists() or not folderDirectory.exists():
+    logging.warning("qgis-app (repository) or layers (sub folder) does not exist")
 
 # Initialize QGIS
 QgsApplication.setPrefixPath("~/QGIS 3.34.0", True)
@@ -84,10 +111,10 @@ layers = []
 
 
 # Used to create a point layer from csv data
-def create_csv_layers(
+def create_location_layers_from_csv(
     lines: typing.List[str], headers: typing.List[str], housing_layer: QgsVectorLayer
 ) -> QgsVectorDataProvider:
-    """generate csv layers
+    """For each location in the given csv, add them to the provided housing layer
 
     Args:
         lines (typing.List[str]): csv content. do not include headers
@@ -98,39 +125,62 @@ def create_csv_layers(
         QgsVectorDataProvider: _description_
     """
     prov = housing_layer.dataProvider()
+    housing_layer.startEditing()
     fields = prov.fields()
+    # list of location dots to be added to the layer
     feats = []
-    
-    # expecting lines to include header
+
     for line in lines:
+        # is this a new line check? this is cleaned when passing lines
         if not line.strip():
             continue
-        values = line.split(",")
+        csv_values = line.split(",")
         feat = QgsFeature(fields)
-        
+
         feat.setGeometry(
             QgsGeometry.fromPointXY(
                 QgsPointXY(
-                    float(values[headers.index("LONGITUDE")]),
-                    float(values[headers.index("LATITUDE")]),
+                    float(csv_values[headers.index("LONGITUDE")]),
+                    float(csv_values[headers.index("LATITUDE")]),
                 )
             )
         )
-        try:
-            for header, csv_value in zip(headers, values):
-                feat[header] = csv_value
-        except Exception:
-            logging.error(traceback.format_exc())
+
+        for header, csv_value in zip(headers, csv_values):
+            feat[header] = csv_value
         feats.append(feat)
+
     prov.addFeatures(feats)
     housing_layer.setRenderer(
         housing_layer.renderer().defaultRenderer(housing_layer.geometryType())
     )
-    housing_layer.updateExtents()
     housing_layer.setCrs(QgsCoordinateReferenceSystem("EPSG:4326"))
+    housing_layer.updateExtents()
+    housing_layer.commitChanges()
     # root.insertChildNode(0, QgsLayerTreeLayer(housing_layer))
-    project.instance().addMapLayer(housing_layer)
-    return prov
+    logging.info(f"{housing_layer.crs() = }")
+    error = QgsVectorFileWriter.writeAsVectorFormat(
+        housing_layer,
+        str(LAYERS_DIRECTORY / "locations.shp"),
+        "UTF-8",
+        housing_layer.crs(),
+        "ESRI Shapefile",
+    )
+
+    if error[0] == QgsVectorFileWriter.WriterError.NoError:
+        save_locations = QgsVectorLayer(
+            str(LAYERS_DIRECTORY / "locations.shp"), "Locations", "ogr"
+        )
+        logging.info("Locations shp file saved")
+        #for some reason the writer doesnt save the crs info
+        save_locations.setCrs(housing_layer.crs())
+        project.instance().addMapLayer(save_locations)
+        #TODO variable going out of scope and getting GCed...
+        return save_locations.dataProvider()
+    else:
+        logging.error("could not save locations shp file. using memory")
+        project.instance().addMapLayer(housing_layer)
+        return prov
 
 
 # Used to create heatmap layers from csv heating data
@@ -143,6 +193,7 @@ def create_heatmap_layers(
     for attribute_name in attributes:
         # Checks if there is already a layer for an attribute, and if not it creates one
         check = False
+        #! add check for None heatmap.
         if len(heating_layers.children()) == 0:
             heatmap_layer = QgsVectorLayer(
                 "Point?crs=EPSG:4326", f"Heatmap - {attribute_name}", "memory"
@@ -165,7 +216,9 @@ def create_heatmap_layers(
         heatmap_renderer.setWeightExpression("1")
         heatmap_renderer.setRadius(10)
 
-        color_ramp = QgsStyle().defaultStyle().colorRamp("TransparentBlue")
+        color_ramp = QgsGradientColorRamp(
+            QColor(255, 16, 16, 0), QColor(67, 67, 215, 255)
+        )
         heatmap_renderer.setColorRamp(color_ramp)
 
         # Determine if a feature is worth putting on a layer
@@ -197,7 +250,10 @@ def create_heatmap_layers(
 
 # Used to create heatmap layers from csv demographic data
 def create_demographic_layers(
-    attributes: typing.List[str], file_path: Path, demographic: QgsLayerTreeGroup, idx: int
+    attributes: typing.List[str],
+    file_path: Path,
+    demographic: QgsLayerTreeGroup,
+    idx: int,
 ) -> None:
     # Create a dictionary of demographic variables as related to zipcodes
     with open(file_path, encoding="utf-8") as csvfile:
@@ -208,16 +264,20 @@ def create_demographic_layers(
         if layer.name() == "BaseLayerDB — Zips_in_Metros":
             base_layer = layer.clone()
             break
-        
+
     csv_groups = QgsLayerTreeGroup(f"{file_path.stem}")
-    
+
     # Create a layer for each attribute in heating_attributes
     for index, attribute_name in enumerate(attributes):
         # Determines how the headers should be grouped (DP05 in groups of 4, S1901 in groups of 2, etc.)
         # If reading a csv with a new format, copy one if statement and be sure to modify the values in range()
         # Csvs with groups larger than 4 will need to be modified further, by modifying the values in:
         # demo_layer.deleteAttributes(), new_feat.resizeAttributes(), and new_feat.setAttribute()
-        if "S1901" in file_path.stem and "famil" not in attribute_name.lower() and "EST" in attribute_name:
+        if (
+            "S1901" in file_path.stem
+            and "famil" not in attribute_name.lower()
+            and "EST" in attribute_name
+        ):
             logging.info(f"{attribute_name = }")
             demo_layer = QgsVectorLayer(
                 "MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory"
@@ -281,7 +341,11 @@ def create_demographic_layers(
                             new_feat.setAttribute(field_idx, value)
 
                     demo_layer.updateFeature(new_feat)
-        elif "DP05" in file_path.stem and attribute_name in DP05_ALLOW_LIST and "PCT" in attribute_name:
+        elif (
+            "DP05" in file_path.stem
+            and attribute_name in DP05_ALLOW_LIST
+            and "PCT" in attribute_name
+        ):
             logging.info(f"{attribute_name = }")
             demo_layer = QgsVectorLayer(
                 "MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory"
@@ -391,9 +455,11 @@ def create_demographic_layers(
             logging.error(traceback.format_exc())
 
         # Add the layer to the Layer Tree
-        csv_groups.insertChildNode(attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer))
+        csv_groups.insertChildNode(
+            attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer)
+        )
         csv_groups.updateChildVisibilityMutuallyExclusive()
-        
+
         layers.append(demo_layer)
 
         # Used to limit number of layers generated for testing
@@ -424,7 +490,7 @@ def read_housing_data(directory: Path):
         for path in directory.rglob("*.csv")
         if zip_code_csv_regex.match(path.stem) is not None
     ]
-    
+
     for zip_file in csv_files:
         with open(zip_file, "r", encoding="utf-8") as f:
             lines = [line.strip("\r\n") for line in f.readlines()]
@@ -433,7 +499,7 @@ def read_housing_data(directory: Path):
                 headers = lines[0].split(",")
             # shouldnt error as each csv should only be created if data exsists (2 lines min)
             merged_csv_contents.extend(lines[1:])
-            
+
     # Create the csv path (csv_info) and add the csv headers to the path
     csv_info = "Point?crs=EPSG:4326"
 
@@ -443,7 +509,7 @@ def read_housing_data(directory: Path):
 
     try:
         # Extracts desired attribute names from the csv headers
-        new_prov = create_csv_layers(merged_csv_contents, headers, layer)
+        new_prov = create_location_layers_from_csv(merged_csv_contents, headers, layer)
         attributes = list(itertools.dropwhile(lambda x: x != "Electricity", headers))
         create_heatmap_layers(new_prov, attributes, heating_layers)
     except Exception as e:
@@ -477,7 +543,7 @@ def read_demographic_data(directory: Path):
 
 def read_shape_file(directory: Path):
     for file_path in directory.glob("*.shp"):
-        layer = QgsVectorLayer(file_path, file_path.stem, "ogr")
+        layer = QgsVectorLayer(str(file_path), file_path.stem, "ogr")
         try:
             layers.append(layer)
             project.instance().addMapLayer(layer)
@@ -492,7 +558,7 @@ demographic_layers = QgsLayerTreeGroup("Demographic Info")
 # Calls to read specific folders within the layers folder
 # To read files in a new folder, add a new line with the folder to be read as the second parameter
 read_housing_data(METRO_DIRECTORY)
-read_demographic_data(CENSUS_DIRECTORY)
+# read_demographic_data(CENSUS_DIRECTORY)
 # shapefile?
 
 heating_layers.updateChildVisibilityMutuallyExclusive()
