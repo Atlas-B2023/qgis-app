@@ -169,20 +169,17 @@ def create_location_layers_from_csv(
 
     if os.path.exists(GEO_PKG_OUTPUT):
         # update
-        params = {
-            "INPUT": housing_layer,
-            "OPTIONS": "-update -nln Locations",
-            "OUTPUT": GEO_PKG_OUTPUT,
-        }
-        processing.run("gdal:convertformat", params)
+        options = QgsVectorFileWriter.SaveVectorOptions()
+        options.driverName = "GPKG" 
+        options.layerName = housing_layer.name()
+        options.actionOnExistingFile = QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
+        QgsVectorFileWriter.writeAsVectorFormatV2(housing_layer,str(GEO_PKG_OUTPUT),project.transformContext(),options)
     else:
-        # create
-        params = {
-            "INPUT": housing_layer,
-            "OUTPUT": GEO_PKG_OUTPUT,
-            "LAYER_NAME": "Locations",
-        }
-        processing.run("native:savefeatures", params)
+        #create
+        options = QgsVectorFileWriter.SaveVectorOptions()
+        options.driverName = "GPKG" 
+        options.layerName = housing_layer.name()
+        QgsVectorFileWriter.writeAsVectorFormatV2(housing_layer,str(GEO_PKG_OUTPUT),project.transformContext(),options)
 
     locations_layer_path = GEO_PKG_OUTPUT / "|layername=Locations"
     housing_layer = QgsVectorLayer(str(locations_layer_path), "Locations", "ogr")
@@ -282,22 +279,20 @@ def create_heatmap_layers(
                 attributes.index(attribute_name), QgsLayerTreeLayer(heatmap_layer)
             )
         # point 2
+        
         if os.path.exists(GEO_PKG_OUTPUT):
             # update
-            params = {
-                "INPUT": heatmap_layer,
-                "OPTIONS": f"-update -nln 'Heatmap-{attribute_name}'",
-                "OUTPUT": GEO_PKG_OUTPUT,
-            }
-            processing.run("gdal:convertformat", params)
+            options = QgsVectorFileWriter.SaveVectorOptions()
+            options.driverName = "GPKG" 
+            options.layerName = heatmap_layer.name()
+            options.actionOnExistingFile = QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
+            QgsVectorFileWriter.writeAsVectorFormatV2(heatmap_layer,str(GEO_PKG_OUTPUT),project.transformContext(),options)
         else:
-            # create
-            params = {
-                "INPUT": heatmap_layer,
-                "OUTPUT": GEO_PKG_OUTPUT,
-                "LAYER_NAME": f"Heatmap-{attribute_name}",
-            }
-            processing.run("native:savefeatures", params)
+            #create
+            options = QgsVectorFileWriter.SaveVectorOptions()
+            options.driverName = "GPKG" 
+            options.layerName = heatmap_layer.name()
+            QgsVectorFileWriter.writeAsVectorFormatV2(heatmap_layer,str(GEO_PKG_OUTPUT),project.transformContext(),options)
 
         locations_layer_path = GEO_PKG_OUTPUT / f"|layername=Heatmap-{attribute_name}"
         heatmap_layer = QgsVectorLayer(str(locations_layer_path), "Locations", "ogr")
