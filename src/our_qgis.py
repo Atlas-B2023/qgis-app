@@ -26,6 +26,9 @@ import typing
 import itertools
 import traceback
 from pathlib import Path
+from qgis import processing
+import os
+
 
 # Keep in mind that this program will be running with python 3.9
 
@@ -51,13 +54,8 @@ CENSUS_DIRECTORY = (
     / "output"
     / "census_data"
 )
-LAYERS_DIRECTORY = (
-    Path(__file__).parent.parent.parent
-    / "ResidentialElectrificationTracker"
-    / "output"
-    / "qgis_layers"
-)
-LAYERS_DIRECTORY.mkdir(parents=True, exist_ok=True)
+
+GEO_PKG_OUTPUT = PROJECT_DIRECTORY / "final_analysis.gpkg"
 
 DP05_ALLOW_LIST = [
     "PCTTotalHousingUnits",
@@ -81,7 +79,7 @@ S1501_ALLOW_LIST = [
     "ESTPCTAgeByEduAttainPop25YearsplusHighSchoolGraduate(includesEquivalency)",
     "ESTPCTAgeByEduAttainPop25YearsplusBachelorsDegreeOrHigher",
     "ESTPCTAgeByEduAttainPop18To24YearsHighSchoolGraduate(includesEquivalency)",
-    "ESTPCTAgeByEduAttainPop18To24YearsBachelorsDegreeOrHigher"
+    "ESTPCTAgeByEduAttainPop18To24YearsBachelorsDegreeOrHigher",
 ]
 
 # Set up project log file
@@ -165,29 +163,52 @@ def create_location_layers_from_csv(
     housing_layer.updateExtents()
     housing_layer.commitChanges()
     # root.insertChildNode(0, QgsLayerTreeLayer(housing_layer))
-    error = QgsVectorFileWriter.writeAsVectorFormat(
-        housing_layer,
-        str(LAYERS_DIRECTORY / "locations.gpkg"),
-        "UTF-8",
-        housing_layer.crs(),
-        "GPKG",
-    )
 
-    shape_file_vector = None
-    if error[0] == QgsVectorFileWriter.WriterError.NoError:
-        shape_file_vector = QgsVectorLayer(
-            str(LAYERS_DIRECTORY / "locations.gpkg"), "Locations", "ogr"
-        )
-        logging.info("Locations gpkg file saved")
-        # for some reason the writer doesnt save the crs info
-        shape_file_vector.setCrs(housing_layer.crs())
-        project.instance().addMapLayer(shape_file_vector)
-        # TODO variable going out of scope and getting GCed...
-        return shape_file_vector.dataProvider()
+    if os.path.exists(GEO_PKG_OUTPUT):
+        # update
+        params = {
+            "INPUT": housing_layer,
+            "OPTIONS": "-update -nln Locations",
+            "OUTPUT": GEO_PKG_OUTPUT,
+        }
+        processing.run("gdal:convertformat", params)
     else:
-        logging.error("could not save locations gpkg file. using memory")
-        project.instance().addMapLayer(housing_layer)
-        return prov
+        # create
+        params = {
+            "INPUT": housing_layer,
+            "OUTPUT": GEO_PKG_OUTPUT,
+            "LAYER_NAME": "Locations",
+        }
+        processing.run("native:savefeatures", params)
+
+    locations_layer_path = GEO_PKG_OUTPUT / "|layername=Locations"
+    housing_layer = QgsVectorLayer(str(locations_layer_path), "Locations", "ogr")
+    logging.info(f"{housing_layer.crs() =}")
+    project.instance().addMapLayer(housing_layer)
+    return housing_layer.dataProvider()
+    # error = QgsVectorFileWriter.writeAsVectorFormat(
+    #     housing_layer,
+    #     str(PROJECT_DIRECTORY / "locations.gpkg"),
+    #     "UTF-8",
+    #     housing_layer.crs(),
+    #     "GPKG",
+    # )
+
+    # shape_file_vector = None
+    # if error[0] == QgsVectorFileWriter.WriterError.NoError:
+    #     shape_file_vector = QgsVectorLayer(
+    #         str(PROJECT_DIRECTORY / "locations.gpkg"), "Locations", "ogr"
+    #     )
+    #     logging.info("Locations gpkg file saved")
+    #     # for some reason the writer doesnt save the crs info
+    #     shape_file_vector.setCrs(housing_layer.crs())
+    #     project.instance().addMapLayer(shape_file_vector)
+    #     # TODO variable going out of scope and getting GCed...
+    #     return shape_file_vector.dataProvider()
+    # else:
+    #     logging.error("could not save locations gpkg file. using memory")
+    #     project.instance().addMapLayer(housing_layer)
+    #     return prov
 
 
 # Used to create heatmap layers from csv heating data
@@ -210,18 +231,18 @@ def create_heatmap_layers(
         #! add check for None heatmap.
         if len(heating_layers.children()) == 0:
             heatmap_layer = QgsVectorLayer(
-                "Point?crs=EPSG:4326", f"Heatmap - {attribute_name}", "memory"
+                "Point?crs=EPSG:4326", f"Heatmap-{attribute_name}", "memory"
             )
             check = False
         else:
             for child_node in heating_layers.children():
-                if child_node.name() == f"Heatmap - {attribute_name}":
+                if child_node.name() == f"Heatmap-{attribute_name}":
                     heatmap_layer = child_node.layer()
                     check = True
                     break
                 else:
                     heatmap_layer = QgsVectorLayer(
-                        "Point?crs=EPSG:4326", f"Heatmap - {attribute_name}", "memory"
+                        "Point?crs=EPSG:4326", f"Heatmap-{attribute_name}", "memory"
                     )
                     check = False
 
@@ -249,31 +270,6 @@ def create_heatmap_layers(
         # Update the layer with the new features
         heatmap_provider.addFeatures(new_feats)
         heatmap_layer.updateExtents()
-
-        #point 2
-        error = QgsVectorFileWriter.writeAsVectorFormat(
-            heatmap_layer,
-            str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
-            "UTF-8",
-            heatmap_layer.crs(),
-            "GPKG",
-        )
-
-        if error[0] == QgsVectorFileWriter.WriterError.NoError:
-            shape_file_vector = QgsVectorLayer(
-                str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
-                f"Heatmap - {attribute_name}.gpkg",
-                "ogr",
-            )
-            logging.info(f"Heatmap - {attribute_name}.gpkg file saved")
-            # for some reason the writer doesnt save the crs info
-            shape_file_vector.setCrs(heatmap_layer.crs())
-            # mutate var so that its now pointing to the
-            heatmap_layer = shape_file_vector
-
-        else:
-            logging.info(f"could not save Heatmap - {attribute_name}.gpkg file saved")
-
         heatmap_layer.setRenderer(heatmap_renderer)
         heatmap_layer.setSubLayerVisibility(attribute_name, False)
 
@@ -282,6 +278,48 @@ def create_heatmap_layers(
             heating_layers.insertChildNode(
                 attributes.index(attribute_name), QgsLayerTreeLayer(heatmap_layer)
             )
+        # point 2
+        if os.path.exists(GEO_PKG_OUTPUT):
+            # update
+            params = {
+                "INPUT": heatmap_layer,
+                "OPTIONS": f"-update -nln 'Heatmap-{attribute_name}'",
+                "OUTPUT": GEO_PKG_OUTPUT,
+            }
+            processing.run("gdal:convertformat", params)
+        else:
+            # create
+            params = {
+                "INPUT": heatmap_layer,
+                "OUTPUT": GEO_PKG_OUTPUT,
+                "LAYER_NAME": f"Heatmap-{attribute_name}",
+            }
+            processing.run("native:savefeatures", params)
+
+        locations_layer_path = GEO_PKG_OUTPUT / f"|layername=Heatmap-{attribute_name}"
+        heatmap_layer = QgsVectorLayer(str(locations_layer_path), "Locations", "ogr")
+        # error = QgsVectorFileWriter.writeAsVectorFormat(
+        #     heatmap_layer,
+        #     str(PROJECT_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
+        #     "UTF-8",
+        #     heatmap_layer.crs(),
+        #     "GPKG",
+        # )
+
+        # if error[0] == QgsVectorFileWriter.WriterError.NoError:
+        #     shape_file_vector = QgsVectorLayer(
+        #         str(PROJECT_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
+        #         f"Heatmap - {attribute_name}.gpkg",
+        #         "ogr",
+        #     )
+        #     logging.info(f"Heatmap - {attribute_name}.gpkg file saved")
+        #     # for some reason the writer doesnt save the crs info
+        #     shape_file_vector.setCrs(heatmap_layer.crs())
+        #     # mutate var so that its now pointing to the
+        #     heatmap_layer = shape_file_vector
+
+        # else:
+        #     logging.info(f"could not save Heatmap - {attribute_name}.gpkg file saved")
 
         # Display the heatmap
         layers.append(heatmap_layer)
@@ -377,11 +415,10 @@ def create_demographic_layers(
                 layer.setColor(color_ramp.color(translated_val))
                 category = QgsRendererCategory(value, symbol, str(value))
                 renderer.addCategory(category)
-                
-            
+
             error = QgsVectorFileWriter.writeAsVectorFormat(
                 demo_layer,
-                str(LAYERS_DIRECTORY / f"{attribute_name}.gpkg"),
+                str(PROJECT_DIRECTORY / f"Demo - {attribute_name}.gpkg"),
                 "UTF-8",
                 demo_layer.crs(),
                 "GPKG",
@@ -389,12 +426,14 @@ def create_demographic_layers(
 
             if error[0] == QgsVectorFileWriter.WriterError.NoError:
                 shape_file_vector = QgsVectorLayer(
-                    str(LAYERS_DIRECTORY / f"Demo - {attribute_name}.gpkg"), f"{attribute_name}.gpkg", "ogr"
+                    str(PROJECT_DIRECTORY / f"Demo - {attribute_name}.gpkg"),
+                    f"{attribute_name}.gpkg",
+                    "ogr",
                 )
-                logging.info(f"Demo - {attribute_name}.gpkg file saved")
-                #for some reason the writer doesnt save the crs info
+                logging.info(f"Heatmap - {attribute_name}.gpkg file saved")
+                # for some reason the writer doesnt save the crs info
                 shape_file_vector.setCrs(demo_layer.crs())
-                #mutate var so that its now pointing to the 
+                # mutate var so that its now pointing to the
                 demo_layer = shape_file_vector
 
             else:
@@ -653,7 +692,7 @@ demographic_layers = QgsLayerTreeGroup("Demographic Info")
 # Calls to read specific folders within the layers folder
 # To read files in a new folder, add a new line with the folder to be read as the second parameter
 read_housing_data(METRO_DIRECTORY)
-read_demographic_data(CENSUS_DIRECTORY)
+# read_demographic_data(CENSUS_DIRECTORY)
 # shapefile?
 
 heating_layers.updateChildVisibilityMutuallyExclusive()
