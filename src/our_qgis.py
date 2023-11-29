@@ -78,10 +78,10 @@ DP05_ALLOW_LIST = [
 ]
 
 S1501_ALLOW_LIST = [
-    "PCTPOP18to24yearsHighschoolgraduate(includesequivalency)",
-    "PCTPOP18to24yearsBachelorsdegreeorhigher",
-    "PCTPOP25yearsandoverHighschoolgraduate(includesequivalency)",
-    "PCTPOP25yearsandoverBachelorsdegreeorhigher",
+    "ESTPCTAgeByEduAttainPop25YearsplusHighSchoolGraduate(includesEquivalency)",
+    "ESTPCTAgeByEduAttainPop25YearsplusBachelorsDegreeOrHigher",
+    "ESTPCTAgeByEduAttainPop18To24YearsHighSchoolGraduate(includesEquivalency)",
+    "ESTPCTAgeByEduAttainPop18To24YearsBachelorsDegreeOrHigher"
 ]
 
 # Set up project log file
@@ -400,7 +400,7 @@ def create_demographic_layers(
             else:
                 logging.info(f"Could not save {attribute_name}.gpkg")
 
-                demo_layer.setRenderer(renderer)
+            demo_layer.setRenderer(renderer)
         except Exception:
             logging.error(traceback.format_exc())
 
@@ -653,7 +653,7 @@ demographic_layers = QgsLayerTreeGroup("Demographic Info")
 # Calls to read specific folders within the layers folder
 # To read files in a new folder, add a new line with the folder to be read as the second parameter
 read_housing_data(METRO_DIRECTORY)
-# read_demographic_data(CENSUS_DIRECTORY)
+read_demographic_data(CENSUS_DIRECTORY)
 # shapefile?
 
 heating_layers.updateChildVisibilityMutuallyExclusive()
