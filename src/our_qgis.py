@@ -165,7 +165,6 @@ def create_location_layers_from_csv(
     housing_layer.updateExtents()
     housing_layer.commitChanges()
     # root.insertChildNode(0, QgsLayerTreeLayer(housing_layer))
-    logging.info(f"{housing_layer.crs() = }")
     error = QgsVectorFileWriter.writeAsVectorFormat(
         housing_layer,
         str(LAYERS_DIRECTORY / "locations.shp"),
@@ -174,16 +173,17 @@ def create_location_layers_from_csv(
         "ESRI Shapefile",
     )
 
+    shape_file_vector = None
     if error[0] == QgsVectorFileWriter.WriterError.NoError:
-        save_locations = QgsVectorLayer(
+        shape_file_vector = QgsVectorLayer(
             str(LAYERS_DIRECTORY / "locations.shp"), "Locations", "ogr"
         )
         logging.info("Locations shp file saved")
         #for some reason the writer doesnt save the crs info
-        save_locations.setCrs(housing_layer.crs())
-        project.instance().addMapLayer(save_locations)
+        shape_file_vector.setCrs(housing_layer.crs())
+        project.instance().addMapLayer(shape_file_vector)
         #TODO variable going out of scope and getting GCed...
-        return save_locations.dataProvider()
+        return shape_file_vector.dataProvider()
     else:
         logging.error("could not save locations shp file. using memory")
         project.instance().addMapLayer(housing_layer)
@@ -218,6 +218,28 @@ def create_heatmap_layers(
                     )
                     check = False
 
+        # point 1
+        error = QgsVectorFileWriter.writeAsVectorFormat(
+            heatmap_layer,
+            str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.shp"),
+            "UTF-8",
+            heatmap_layer.crs(),
+            "ESRI Shapefile",
+        )
+
+        if error[0] == QgsVectorFileWriter.WriterError.NoError:
+            shape_file_vector = QgsVectorLayer(
+                str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.shp"), f"Heatmap - {attribute_name}.shp", "ogr"
+            )
+            logging.info(f"Heatmap - {attribute_name}.shp file saved")
+            #for some reason the writer doesnt save the crs info
+            shape_file_vector.setCrs(heatmap_layer.crs())
+            #mutate var so that its now pointing to the 
+            heatmap_layer = shape_file_vector
+
+        else:
+            logging.info(f"could not save Heatmap - {attribute_name}.shp file saved")
+        
         heatmap_provider = heatmap_layer.dataProvider()
         heatmap_renderer = QgsHeatmapRenderer()
         heatmap_renderer.setWeightExpression("1")
