@@ -221,24 +221,24 @@ def create_heatmap_layers(
         # point 1
         error = QgsVectorFileWriter.writeAsVectorFormat(
             heatmap_layer,
-            str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.shp"),
+            str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
             "UTF-8",
             heatmap_layer.crs(),
-            "ESRI Shapefile",
+            "GPKG",
         )
 
         if error[0] == QgsVectorFileWriter.WriterError.NoError:
             shape_file_vector = QgsVectorLayer(
-                str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.shp"), f"Heatmap - {attribute_name}.shp", "ogr"
+                str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"), f"Heatmap - {attribute_name}.gpkg", "ogr"
             )
-            logging.info(f"Heatmap - {attribute_name}.shp file saved")
+            logging.info(f"Heatmap - {attribute_name}.gpkg file saved")
             #for some reason the writer doesnt save the crs info
             shape_file_vector.setCrs(heatmap_layer.crs())
             #mutate var so that its now pointing to the 
             heatmap_layer = shape_file_vector
 
         else:
-            logging.info(f"could not save Heatmap - {attribute_name}.shp file saved")
+            logging.info(f"could not save Heatmap - {attribute_name}.gpkg file saved")
         
         heatmap_provider = heatmap_layer.dataProvider()
         heatmap_renderer = QgsHeatmapRenderer()
@@ -349,7 +349,30 @@ def create_demographic_layers(
                 layer.setColor(color_ramp.color(translated_val))
                 category = QgsRendererCategory(value, symbol, str(value))
                 renderer.addCategory(category)
-            demo_layer.setRenderer(renderer)
+                
+            
+            error = QgsVectorFileWriter.writeAsVectorFormat(
+                demo_layer,
+                str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
+                "UTF-8",
+                demo_layer.crs(),
+                "GPKG",
+            )
+
+            if error[0] == QgsVectorFileWriter.WriterError.NoError:
+                shape_file_vector = QgsVectorLayer(
+                    str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"), f"{attribute_name}.gpkg", "ogr"
+                )
+                logging.info(f"Heatmap - {attribute_name}.gpkg file saved")
+                #for some reason the writer doesnt save the crs info
+                shape_file_vector.setCrs(demo_layer.crs())
+                #mutate var so that its now pointing to the 
+                demo_layer = shape_file_vector
+
+            else:
+                logging.info(f"Could not save {attribute_name}.gpkg")
+
+                demo_layer.setRenderer(renderer)
         except Exception:
             logging.error(traceback.format_exc())
 
