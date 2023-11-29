@@ -74,14 +74,14 @@ DP05_ALLOW_LIST = [
     "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_A_",
     "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_S_",
     "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_P_",
-    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_O_"
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_O_",
 ]
 
 S1501_ALLOW_LIST = [
     "PCTPOP18to24yearsHighschoolgraduate(includesequivalency)",
     "PCTPOP18to24yearsBachelorsdegreeorhigher",
     "PCTPOP25yearsandoverHighschoolgraduate(includesequivalency)",
-    "PCTPOP25yearsandoverBachelorsdegreeorhigher"
+    "PCTPOP25yearsandoverBachelorsdegreeorhigher",
 ]
 
 # Set up project log file
@@ -167,25 +167,25 @@ def create_location_layers_from_csv(
     # root.insertChildNode(0, QgsLayerTreeLayer(housing_layer))
     error = QgsVectorFileWriter.writeAsVectorFormat(
         housing_layer,
-        str(LAYERS_DIRECTORY / "locations.shp"),
+        str(LAYERS_DIRECTORY / "locations.gpkg"),
         "UTF-8",
         housing_layer.crs(),
-        "ESRI Shapefile",
+        "GPKG",
     )
 
     shape_file_vector = None
     if error[0] == QgsVectorFileWriter.WriterError.NoError:
         shape_file_vector = QgsVectorLayer(
-            str(LAYERS_DIRECTORY / "locations.shp"), "Locations", "ogr"
+            str(LAYERS_DIRECTORY / "locations.gpkg"), "Locations", "ogr"
         )
-        logging.info("Locations shp file saved")
-        #for some reason the writer doesnt save the crs info
+        logging.info("Locations gpkg file saved")
+        # for some reason the writer doesnt save the crs info
         shape_file_vector.setCrs(housing_layer.crs())
         project.instance().addMapLayer(shape_file_vector)
-        #TODO variable going out of scope and getting GCed...
+        # TODO variable going out of scope and getting GCed...
         return shape_file_vector.dataProvider()
     else:
-        logging.error("could not save locations shp file. using memory")
+        logging.error("could not save locations gpkg file. using memory")
         project.instance().addMapLayer(housing_layer)
         return prov
 
@@ -196,9 +196,16 @@ def create_heatmap_layers(
     attributes: typing.List[str],
     heating_layers: QgsLayerTreeGroup,
 ) -> None:
+    """Generate heat maps for the given attributes.
+
+    Args:
+        prov (QgsVectorDataProvider): _description_
+        attributes (typing.List[str]): _description_
+        heating_layers (QgsLayerTreeGroup): _description_
+    """
     # Create a heatmap layer for each attribute in heating_attributes
     for attribute_name in attributes:
-        # Checks if there is already a layer for an attribute, and if not it creates one
+        # Checks if there is already a layer for an attribute, and if not it creates one. eg if there is no diesel in the csv, still make the diesel layer
         check = False
         #! add check for None heatmap.
         if len(heating_layers.children()) == 0:
@@ -221,25 +228,27 @@ def create_heatmap_layers(
         # point 1
         error = QgsVectorFileWriter.writeAsVectorFormat(
             heatmap_layer,
-            str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.shp"),
+            str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
             "UTF-8",
             heatmap_layer.crs(),
-            "ESRI Shapefile",
+            "GPKG",
         )
 
         if error[0] == QgsVectorFileWriter.WriterError.NoError:
             shape_file_vector = QgsVectorLayer(
-                str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.shp"), f"Heatmap - {attribute_name}.shp", "ogr"
+                str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
+                f"Heatmap - {attribute_name}.gpkg",
+                "ogr",
             )
-            logging.info(f"Heatmap - {attribute_name}.shp file saved")
-            #for some reason the writer doesnt save the crs info
+            logging.info(f"Heatmap - {attribute_name}.gpkg file saved")
+            # for some reason the writer doesnt save the crs info
             shape_file_vector.setCrs(heatmap_layer.crs())
-            #mutate var so that its now pointing to the 
+            # mutate var so that its now pointing to the
             heatmap_layer = shape_file_vector
 
         else:
-            logging.info(f"could not save Heatmap - {attribute_name}.shp file saved")
-        
+            logging.info(f"could not save Heatmap - {attribute_name}.gpkg file saved")
+
         heatmap_provider = heatmap_layer.dataProvider()
         heatmap_renderer = QgsHeatmapRenderer()
         heatmap_renderer.setWeightExpression("1")
@@ -302,12 +311,30 @@ def create_demographic_layers(
         # If reading a csv with a new format, copy one if statement and be sure to modify the values in range()
         # Csvs with groups larger than 4 will need to be modified further, by modifying the values in:
         # demo_layer.deleteAttributes(), new_feat.resizeAttributes(), and new_feat.setAttribute()
-        if "S1501" in file_path.stem and attribute_name in S1501_ALLOW_LIST and "PCT" in attribute_name:
-            demo_layer = demographics_groups_of_four(attributes, attribute_name, base_layer, data, index)
-        elif "S1901" in file_path.stem and "famil" not in attribute_name.lower() and "EST" in attribute_name:
-            demo_layer = demographics_groups_of_two(attributes, attribute_name, base_layer, data, index)
-        elif "DP05" in file_path.stem and attribute_name in DP05_ALLOW_LIST and "PCT" in attribute_name:
-            demo_layer = demographics_groups_of_four(attributes, attribute_name, base_layer, data, index)
+        if (
+            "S1501" in file_path.stem
+            and attribute_name in S1501_ALLOW_LIST
+            and "PCT" in attribute_name
+        ):
+            demo_layer = demographics_groups_of_four(
+                attributes, attribute_name, base_layer, data, index
+            )
+        elif (
+            "S1901" in file_path.stem
+            and "famil" not in attribute_name.lower()
+            and "EST" in attribute_name
+        ):
+            demo_layer = demographics_groups_of_two(
+                attributes, attribute_name, base_layer, data, index
+            )
+        elif (
+            "DP05" in file_path.stem
+            and attribute_name in DP05_ALLOW_LIST
+            and "PCT" in attribute_name
+        ):
+            demo_layer = demographics_groups_of_four(
+                attributes, attribute_name, base_layer, data, index
+            )
         else:
             continue
 
@@ -370,11 +397,11 @@ def create_demographic_layers(
 
 # Creates heatmap layers for csvs that are grouped in twos
 def demographics_groups_of_two(
-    attributes: typing.List[str], 
-    attribute_name: str, 
-    base_layer: QgsVectorLayer, 
-    data: typing.Dict[str, typing.Dict[str, str]], 
-    index: int
+    attributes: typing.List[str],
+    attribute_name: str,
+    base_layer: QgsVectorLayer,
+    data: typing.Dict[str, typing.Dict[str, str]],
+    index: int,
 ) -> None:
     logging.info(f"{attribute_name = }")
     demo_layer = QgsVectorLayer(
@@ -405,9 +432,7 @@ def demographics_groups_of_two(
         zip_code = feature.attribute("ZCTA5")
 
         # Makes sure there is data for a zip code and the attribute does not already exist in the fields
-        if (zip_code in data.keys()) and (
-            attribute_name not in demo_fields.names()
-        ):
+        if (zip_code in data.keys()) and (attribute_name not in demo_fields.names()):
             feat_id = feature.id()
             new_feat = demo_layer.getFeature(feat_id)
             features_size = new_feat.fields().size()
@@ -444,11 +469,11 @@ def demographics_groups_of_two(
 
 # Creates heatmap layers for csvs that are grouped in fours
 def demographics_groups_of_four(
-    attributes: typing.List[str], 
-    attribute_name: str, 
-    base_layer: QgsVectorLayer, 
-    data: typing.Dict[str, typing.Dict[str, str]], 
-    index: int
+    attributes: typing.List[str],
+    attribute_name: str,
+    base_layer: QgsVectorLayer,
+    data: typing.Dict[str, typing.Dict[str, str]],
+    index: int,
 ) -> None:
     logging.info(f"{attribute_name = }")
     demo_layer = QgsVectorLayer(
@@ -479,9 +504,7 @@ def demographics_groups_of_four(
         zip_code = feature.attribute("ZCTA5")
 
         # Makes sure there is data for a zip code and the attribute does not already exist in the fields
-        if (zip_code in data.keys()) and (
-            attribute_name not in demo_fields.names()
-        ):
+        if (zip_code in data.keys()) and (attribute_name not in demo_fields.names()):
             feat_id = feature.id()
             new_feat = demo_layer.getFeature(feat_id)
             features_size = new_feat.fields().size()
@@ -557,6 +580,7 @@ def read_housing_data(directory: Path):
     try:
         # Extracts desired attribute names from the csv headers
         new_prov = create_location_layers_from_csv(merged_csv_contents, headers, layer)
+        # attributes go up to heating details, skipping general property info
         attributes = list(itertools.dropwhile(lambda x: x != "Electricity", headers))
         create_heatmap_layers(new_prov, attributes, heating_layers)
     except Exception as e:
