@@ -26,9 +26,12 @@ import typing
 import itertools
 import traceback
 from pathlib import Path
-from qgis import processing
 import os
-
+from qgis.analysis import QgsNativeAlgorithms
+from qgis import processing
+from processing.core.Processing import Processing
+Processing.initialize()
+QgsApplication.processingRegistry().addProvider(QgsNativeAlgorithms())
 
 # Keep in mind that this program will be running with python 3.9
 
