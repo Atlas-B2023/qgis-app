@@ -225,30 +225,6 @@ def create_heatmap_layers(
                     )
                     check = False
 
-        # point 1
-        error = QgsVectorFileWriter.writeAsVectorFormat(
-            heatmap_layer,
-            str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
-            "UTF-8",
-            heatmap_layer.crs(),
-            "GPKG",
-        )
-
-        if error[0] == QgsVectorFileWriter.WriterError.NoError:
-            shape_file_vector = QgsVectorLayer(
-                str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
-                f"Heatmap - {attribute_name}.gpkg",
-                "ogr",
-            )
-            logging.info(f"Heatmap - {attribute_name}.gpkg file saved")
-            # for some reason the writer doesnt save the crs info
-            shape_file_vector.setCrs(heatmap_layer.crs())
-            # mutate var so that its now pointing to the
-            heatmap_layer = shape_file_vector
-
-        else:
-            logging.info(f"could not save Heatmap - {attribute_name}.gpkg file saved")
-
         heatmap_provider = heatmap_layer.dataProvider()
         heatmap_renderer = QgsHeatmapRenderer()
         heatmap_renderer.setWeightExpression("1")
@@ -273,6 +249,31 @@ def create_heatmap_layers(
         # Update the layer with the new features
         heatmap_provider.addFeatures(new_feats)
         heatmap_layer.updateExtents()
+
+        #point 2
+        error = QgsVectorFileWriter.writeAsVectorFormat(
+            heatmap_layer,
+            str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
+            "UTF-8",
+            heatmap_layer.crs(),
+            "GPKG",
+        )
+
+        if error[0] == QgsVectorFileWriter.WriterError.NoError:
+            shape_file_vector = QgsVectorLayer(
+                str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
+                f"Heatmap - {attribute_name}.gpkg",
+                "ogr",
+            )
+            logging.info(f"Heatmap - {attribute_name}.gpkg file saved")
+            # for some reason the writer doesnt save the crs info
+            shape_file_vector.setCrs(heatmap_layer.crs())
+            # mutate var so that its now pointing to the
+            heatmap_layer = shape_file_vector
+
+        else:
+            logging.info(f"could not save Heatmap - {attribute_name}.gpkg file saved")
+
         heatmap_layer.setRenderer(heatmap_renderer)
         heatmap_layer.setSubLayerVisibility(attribute_name, False)
 
