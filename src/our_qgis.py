@@ -381,7 +381,7 @@ def create_demographic_layers(
             
             error = QgsVectorFileWriter.writeAsVectorFormat(
                 demo_layer,
-                str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
+                str(LAYERS_DIRECTORY / f"{attribute_name}.gpkg"),
                 "UTF-8",
                 demo_layer.crs(),
                 "GPKG",
@@ -389,16 +389,16 @@ def create_demographic_layers(
 
             if error[0] == QgsVectorFileWriter.WriterError.NoError:
                 shape_file_vector = QgsVectorLayer(
-                    str(LAYERS_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"), f"{attribute_name}.gpkg", "ogr"
+                    str(LAYERS_DIRECTORY / f"Demo - {attribute_name}.gpkg"), f"{attribute_name}.gpkg", "ogr"
                 )
-                logging.info(f"Heatmap - {attribute_name}.gpkg file saved")
+                logging.info(f"Demo - {attribute_name}.gpkg file saved")
                 #for some reason the writer doesnt save the crs info
                 shape_file_vector.setCrs(demo_layer.crs())
                 #mutate var so that its now pointing to the 
                 demo_layer = shape_file_vector
 
             else:
-                logging.info(f"Could not save {attribute_name}.gpkg")
+                logging.info(f"Could not save Demo - {attribute_name}.gpkg")
 
             demo_layer.setRenderer(renderer)
         except Exception:
@@ -426,7 +426,7 @@ def demographics_groups_of_two(
     base_layer: QgsVectorLayer,
     data: typing.Dict[str, typing.Dict[str, str]],
     index: int,
-) -> None:
+) -> QgsVectorLayer:
     logging.info(f"{attribute_name = }")
     demo_layer = QgsVectorLayer(
         "MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory"
@@ -498,7 +498,7 @@ def demographics_groups_of_four(
     base_layer: QgsVectorLayer,
     data: typing.Dict[str, typing.Dict[str, str]],
     index: int,
-) -> None:
+) -> QgsVectorLayer:
     logging.info(f"{attribute_name = }")
     demo_layer = QgsVectorLayer(
         "MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory"
