@@ -38,7 +38,7 @@ from sys import exit
 #! this should be a sibling folder to the two repository folders
 PROJECT_DIRECTORY = Path(__file__).parent.parent
 PARENT_DIRECTORY = PROJECT_DIRECTORY.parent
-QGIS_PROJECT_FILE_DIRECTORY = PARENT_DIRECTORY / "current_qgis_map"
+QGIS_PROJECT_FILE_DIRECTORY = PARENT_DIRECTORY / "currentqgismap"
 # new_current_gis_map
 
 # recurse
@@ -688,27 +688,13 @@ heatmap_layers = create_heatmap_layers(location_layer.dataProvider(), csv_attrib
 
 # add all layers to global LAYERS = [], and for each LAYER in LAYERS, project.addmaplayer(layer,...)
 project.addMapLayer(location_layer)
-# heatmap_layer_tree_group.addLayer()
-for layer in heatmap_layers:
-    project.addMapLayer(layer)
 
-
-# can display but wont save...
-# heatmap_group = QgsLayerTreeGroup("Heating Types")
-# for index, placed_layer in enumerate(heatmap_layers):
-#     layer = layer_tree_root.findLayer(placed_layer.id())
-#     clone = layer.clone()
-#     layer_tree_root.removeChildNode(layer)
-#     # error = save_location_heatmap_gpkg(clone.layer())
-#     heatmap_group.insertChildNode(index, clone)
-# layer_tree_root.insertChildNode(1, heatmap_group)
-
-
-# layer_tree_root.insertChildNode(1, heatmap_layer_tree_group)
-# heatmap_tree_group.updateChildVisibilityMutuallyExclusive()
-# layer_tree_root.insertChildNode(1, heatmap_tree_group)
-# demographic_layers.updateChildVisibilityMutuallyExclusive()
-# root.insertChildNode(2, demographic_layers)
+# Have to rearrange before saving
+heatmap_group = layer_tree_root.addGroup("Heating Types")
+assert isinstance(heatmap_group, QgsLayerTreeGroup)
+for index, placed_layer in enumerate(heatmap_layers):
+    project.addMapLayer(heatmap_layers[index], False)
+    heatmap_group.addLayer(heatmap_layers[index])
 
 logging.debug("Last one")
 
