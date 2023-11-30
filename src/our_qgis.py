@@ -465,7 +465,7 @@ def create_demographic_layers(
                 demo_layer = shape_file_vector
 
             else:
-                logging.info(f"Could not save {attribute_name}.gpkg")
+                logging.info(f"Could not save Demo - {attribute_name}.gpkg")
 
             demo_layer.setRenderer(renderer)
         except Exception:
