@@ -27,11 +27,7 @@ import itertools
 import traceback
 from pathlib import Path
 import os
-from qgis.analysis import QgsNativeAlgorithms
-from qgis import processing
-from processing.core.Processing import Processing
-Processing.initialize()
-QgsApplication.processingRegistry().addProvider(QgsNativeAlgorithms())
+
 
 # Keep in mind that this program will be running with python 3.9
 
@@ -41,6 +37,7 @@ QgsApplication.processingRegistry().addProvider(QgsNativeAlgorithms())
 #! this should be a sibling folder to the two repository folders
 PROJECT_DIRECTORY = Path(__file__).parent.parent
 PARENT_DIRECTORY = PROJECT_DIRECTORY.parent
+QGIS_PROJECT_FILE_DIRECTORY = PARENT_DIRECTORY / "new_current_gis_map"
 # project_directory = os.path.dirname(QgsProject.instance().fileName())
 # parent_directory = os.path.dirname(PROJECT_DIRECTORY)
 # recurse
@@ -58,7 +55,8 @@ CENSUS_DIRECTORY = (
     / "census_data"
 )
 
-GEO_PKG_OUTPUT = PROJECT_DIRECTORY / "final_analysis.gpkg"
+LOCATION_HEATMAP_GPKG_OUTPUT = QGIS_PROJECT_FILE_DIRECTORY / "location_heatmap.gpkg"
+CENSUS_DATA_GPKG_OUTPUT = QGIS_PROJECT_FILE_DIRECTORY / "census_data.gpkg"
 
 DP05_ALLOW_LIST = [
     "PCTTotalHousingUnits",
@@ -92,7 +90,6 @@ logging.basicConfig(
     level=logging.DEBUG,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
-logging.info("========================================================================")
 
 # Attempt to retrieve the path to the qgis-app and layers folders
 scriptDirectory = PARENT_DIRECTORY / "qgis-app"
@@ -105,8 +102,10 @@ if not scriptDirectory.exists() or not folderDirectory.exists():
 QgsApplication.setPrefixPath("~/QGIS 3.34.0", True)
 qgs = QgsApplication([], False)
 qgs.initQgis()
+logging.info("========================================================================")
 logging.debug("Initialized QGIS")
-
+logging.info("========================================================================")
+logging.info(f"saving location packages to {str(LOCATION_HEATMAP_GPKG_OUTPUT)}")
 # Create a project
 project = QgsProject.instance()
 project.read()
@@ -118,97 +117,146 @@ root = project.instance().layerTreeRoot()
 layers = []
 
 
+# Read all files in the directory stated and create layers accordingly
+def read_housing_data_and_create_location_points_layer(
+    all_metros_directory: Path
+) -> tuple[QgsVectorLayer, list[typing.Any], list[str], list[str]]:
+    # All data within files in the housing folder will be combined in memory and processed as one
+    # Get list of all zipcode csvs
+    first = True
+    merged_csv_contents = []
+    headers = []
+    zip_code_csv_regex = re.compile(r"[0-9]{3}|[0-9]{4}|[0-9]{5}")
+    csv_files = [
+        path
+        for path in all_metros_directory.rglob("*.csv")
+        if zip_code_csv_regex.match(path.stem) is not None
+    ]
+
+    for zip_file in csv_files:
+        with open(zip_file, "r", encoding="utf-8") as f:
+            lines = [line.strip("\r\n") for line in f.readlines() if line.strip("\r\n")]
+            if first:
+                first = False
+                headers = lines[0].split(",")
+            merged_csv_contents.extend(lines[1:])
+
+    # Create the csv path (csv_info) and add the csv headers to the path
+    csv_info = "Point?crs=EPSG:4326"
+
+    csv_info += "".join([f"&field={header}" for header in headers])
+
+    # location_layer_temp = QgsVectorLayer(csv_info, "Locations", "memory")
+    # layer, csv, headers, attributes
+    return (
+        QgsVectorLayer(csv_info, "Locations", "memory"),
+        merged_csv_contents,
+        headers,
+        list(itertools.dropwhile(lambda x: x != "Electricity", headers)),
+    )
+
+    # try:
+    #     # Extracts desired attribute names from the csv headers
+    #     new_prov = create_location_layers_from_csv(merged_csv_contents, headers, location_layer_temp)
+    #     # attributes go up to heating details, skipping the general property info
+    #     attributes = list(itertools.dropwhile(lambda x: x != "Electricity", headers))
+    #     create_heatmap_layers(new_prov, attributes, heating_layers)
+    # except Exception as e:
+    #     logging.error(e)
+    #     logging.error(traceback.format_exc())
+
+
 # Used to create a point layer from csv data
 def create_location_layers_from_csv(
-    lines: typing.List[str], headers: typing.List[str], housing_layer: QgsVectorLayer
+    csv_contents: typing.List[str],
+    csv_headers: typing.List[str],
+    locations_layer: QgsVectorLayer,
 ) -> QgsVectorDataProvider:
-    """For each location in the given csv, add them to the provided housing layer
+    """For each location in the given csv, add them as a feature to the provided housing layer
 
     Args:
         lines (typing.List[str]): csv content. do not include headers
         headers (typing.List[str]): headers
-        housing_layer (QgsVectorLayer): _description_
+        housing_layer (QgsVectorLayer): the housing layer to display
 
     Returns:
         QgsVectorDataProvider: _description_
     """
-    prov = housing_layer.dataProvider()
-    housing_layer.startEditing()
-    fields = prov.fields()
     # list of location dots to be added to the layer
     feats = []
 
-    for line in lines:
-        # is this a new line check? this is cleaned when passing lines
-        if not line.strip():
-            continue
+    locations_layer.startEditing()
+    prov = locations_layer.dataProvider()
+    fields = prov.fields()
+
+    for line in csv_contents:
         csv_values = line.split(",")
         feat = QgsFeature(fields)
 
         feat.setGeometry(
             QgsGeometry.fromPointXY(
                 QgsPointXY(
-                    float(csv_values[headers.index("LONGITUDE")]),
-                    float(csv_values[headers.index("LATITUDE")]),
+                    float(csv_values[csv_headers.index("LONGITUDE")]),
+                    float(csv_values[csv_headers.index("LATITUDE")]),
                 )
             )
         )
 
-        for header, csv_value in zip(headers, csv_values):
+        for header, csv_value in zip(csv_headers, csv_values):
             feat[header] = csv_value
         feats.append(feat)
 
     prov.addFeatures(feats)
-    housing_layer.setRenderer(
-        housing_layer.renderer().defaultRenderer(housing_layer.geometryType())
+    locations_layer.setRenderer(
+        locations_layer.renderer().defaultRenderer(locations_layer.geometryType())
     )
-    housing_layer.setCrs(QgsCoordinateReferenceSystem("EPSG:4326"))
-    housing_layer.updateExtents()
-    housing_layer.commitChanges()
-    # root.insertChildNode(0, QgsLayerTreeLayer(housing_layer))
+    locations_layer.setCrs(QgsCoordinateReferenceSystem("EPSG:4326"))
+    locations_layer.updateExtents()
+    locations_layer.commitChanges()
 
-    if os.path.exists(GEO_PKG_OUTPUT):
+    if LOCATION_HEATMAP_GPKG_OUTPUT.exists():
         # update
         options = QgsVectorFileWriter.SaveVectorOptions()
-        options.driverName = "GPKG" 
-        options.layerName = housing_layer.name()
-        options.actionOnExistingFile = QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
-        QgsVectorFileWriter.writeAsVectorFormatV2(housing_layer,str(GEO_PKG_OUTPUT),project.transformContext(),options)
+        options.layerName = locations_layer.name()
+        options.fileEncoding = locations_layer.dataProvider().encoding()
+        options.driverName = "GPKG"
+        options.attributes = locations_layer.attributeList()  # just putting for sakes
+        options.actionOnExistingFile = (
+            QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
+        )
+        logging.info(f"{locations_layer.isValid() = } before write")
+        error = QgsVectorFileWriter.writeAsVectorFormatV3(
+            locations_layer,
+            str(LOCATION_HEATMAP_GPKG_OUTPUT),
+            project.transformContext(),
+            options,
+        )
+        logging.info(f"{error[0] = }")
     else:
-        #create
+        # create
         options = QgsVectorFileWriter.SaveVectorOptions()
-        options.driverName = "GPKG" 
-        options.layerName = housing_layer.name()
-        QgsVectorFileWriter.writeAsVectorFormatV2(housing_layer,str(GEO_PKG_OUTPUT),project.transformContext(),options)
+        options.driverName = "GPKG"
+        options.layerName = locations_layer.name()
+        options.attributes = locations_layer.attributeList()
+        logging.info(f"{locations_layer.isValid() = } before write")
 
-    locations_layer_path = GEO_PKG_OUTPUT / "|layername=Locations"
-    housing_layer = QgsVectorLayer(str(locations_layer_path), "Locations", "ogr")
-    logging.info(f"{housing_layer.crs() =}")
-    project.instance().addMapLayer(housing_layer)
-    return housing_layer.dataProvider()
-    # error = QgsVectorFileWriter.writeAsVectorFormat(
-    #     housing_layer,
-    #     str(PROJECT_DIRECTORY / "locations.gpkg"),
-    #     "UTF-8",
-    #     housing_layer.crs(),
-    #     "GPKG",
-    # )
+        error = QgsVectorFileWriter.writeAsVectorFormatV3(
+            locations_layer,
+            str(LOCATION_HEATMAP_GPKG_OUTPUT),
+            project.transformContext(),
+            options,
+        )
+        logging.info(f"{error[0] = }")
 
-    # shape_file_vector = None
-    # if error[0] == QgsVectorFileWriter.WriterError.NoError:
-    #     shape_file_vector = QgsVectorLayer(
-    #         str(PROJECT_DIRECTORY / "locations.gpkg"), "Locations", "ogr"
-    #     )
-    #     logging.info("Locations gpkg file saved")
-    #     # for some reason the writer doesnt save the crs info
-    #     shape_file_vector.setCrs(housing_layer.crs())
-    #     project.instance().addMapLayer(shape_file_vector)
-    #     # TODO variable going out of scope and getting GCed...
-    #     return shape_file_vector.dataProvider()
-    # else:
-    #     logging.error("could not save locations gpkg file. using memory")
-    #     project.instance().addMapLayer(housing_layer)
-    #     return prov
+    locations_layer_path = f"{LOCATION_HEATMAP_GPKG_OUTPUT}|layername=Locations"
+    locations_layer = QgsVectorLayer(locations_layer_path, "Locations", "ogr")
+    # locations_layer.setCrs(QgsCoordinateReferenceSystem("EPSG:4326")) # doesnt save for some reason? have to check
+    logging.info(
+        f"{locations_layer.crs() =}, {project.transformContext() = }, {locations_layer.isValid() = }"
+    )
+    return locations_layer
+    # project.instance().addMapLayer(housing_layer)
+    # return housing_layer.dataProvider()
 
 
 # Used to create heatmap layers from csv heating data
@@ -245,7 +293,7 @@ def create_heatmap_layers(
                         "Point?crs=EPSG:4326", f"Heatmap-{attribute_name}", "memory"
                     )
                     check = False
-
+        heatmap_layer.startEditing()
         heatmap_provider = heatmap_layer.dataProvider()
         heatmap_renderer = QgsHeatmapRenderer()
         heatmap_renderer.setWeightExpression("1")
@@ -278,48 +326,46 @@ def create_heatmap_layers(
             heating_layers.insertChildNode(
                 attributes.index(attribute_name), QgsLayerTreeLayer(heatmap_layer)
             )
+
+        heatmap_layer.commitChanges()
         # point 2
-        
-        if os.path.exists(GEO_PKG_OUTPUT):
+
+        if LOCATION_HEATMAP_GPKG_OUTPUT.exists:
             # update
             options = QgsVectorFileWriter.SaveVectorOptions()
-            options.driverName = "GPKG" 
+            options.driverName = "GPKG"
+            options.actionOnExistingFile = (
+                QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
+            )
             options.layerName = heatmap_layer.name()
-            options.actionOnExistingFile = QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
-            QgsVectorFileWriter.writeAsVectorFormatV2(heatmap_layer,str(GEO_PKG_OUTPUT),project.transformContext(),options)
+            logging.info(f"{heatmap_layer.isValid() = } before write")
+            error = QgsVectorFileWriter.writeAsVectorFormatV3(
+                heatmap_layer,
+                str(LOCATION_HEATMAP_GPKG_OUTPUT),
+                project.transformContext(),
+                options,
+            )
+            logging.info(f"{error[0] = }")
         else:
-            #create
+            # create
             options = QgsVectorFileWriter.SaveVectorOptions()
-            options.driverName = "GPKG" 
+            options.driverName = "GPKG"
             options.layerName = heatmap_layer.name()
-            QgsVectorFileWriter.writeAsVectorFormatV2(heatmap_layer,str(GEO_PKG_OUTPUT),project.transformContext(),options)
+            logging.info(f"{heatmap_layer.isValid() = } before write")
+            error = QgsVectorFileWriter.writeAsVectorFormatV3(
+                heatmap_layer,
+                str(LOCATION_HEATMAP_GPKG_OUTPUT),
+                # f"{str(LOCATION_HEATMAP_GPKG_OUTPUT)}|layername=Heatmap-{attribute_name}",
+                project.transformContext(),
+                options,
+            )
+            logging.info(f"{error[0] = }")
 
-        locations_layer_path = GEO_PKG_OUTPUT / f"|layername=Heatmap-{attribute_name}"
-        heatmap_layer = QgsVectorLayer(str(locations_layer_path), "Locations", "ogr")
-        # error = QgsVectorFileWriter.writeAsVectorFormat(
-        #     heatmap_layer,
-        #     str(PROJECT_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
-        #     "UTF-8",
-        #     heatmap_layer.crs(),
-        #     "GPKG",
-        # )
+        locations_layer_path = (
+            f"{LOCATION_HEATMAP_GPKG_OUTPUT}|layername=Heatmap-{attribute_name}"
+        )
+        heatmap_layer = QgsVectorLayer(locations_layer_path, "Locations", "ogr")
 
-        # if error[0] == QgsVectorFileWriter.WriterError.NoError:
-        #     shape_file_vector = QgsVectorLayer(
-        #         str(PROJECT_DIRECTORY / f"Heatmap - {attribute_name}.gpkg"),
-        #         f"Heatmap - {attribute_name}.gpkg",
-        #         "ogr",
-        #     )
-        #     logging.info(f"Heatmap - {attribute_name}.gpkg file saved")
-        #     # for some reason the writer doesnt save the crs info
-        #     shape_file_vector.setCrs(heatmap_layer.crs())
-        #     # mutate var so that its now pointing to the
-        #     heatmap_layer = shape_file_vector
-
-        # else:
-        #     logging.info(f"could not save Heatmap - {attribute_name}.gpkg file saved")
-
-        # Display the heatmap
         layers.append(heatmap_layer)
 
 
@@ -608,47 +654,6 @@ def translate(value, fromMin, fromMax, toMin, toMax):
     return toMin + (valueScaled * toSpan)
 
 
-# Read all files in the directory stated and create layers accordingly
-def read_housing_data(directory: Path):
-    # All data within files in the housing folder will be combined in memory and processed as one
-    # Get list of all zipcode csvs
-    first = True
-    merged_csv_contents = []
-    headers = []
-    zip_code_csv_regex = re.compile(r"[0-9]{3}|[0-9]{4}|[0-9]{5}")
-    csv_files = [
-        path
-        for path in directory.rglob("*.csv")
-        if zip_code_csv_regex.match(path.stem) is not None
-    ]
-
-    for zip_file in csv_files:
-        with open(zip_file, "r", encoding="utf-8") as f:
-            lines = [line.strip("\r\n") for line in f.readlines()]
-            if first:
-                first = False
-                headers = lines[0].split(",")
-            # shouldnt error as each csv should only be created if data exists (2 lines min)
-            merged_csv_contents.extend(lines[1:])
-
-    # Create the csv path (csv_info) and add the csv headers to the path
-    csv_info = "Point?crs=EPSG:4326"
-
-    csv_info += "".join([f"&field={header}" for header in headers])
-
-    layer = QgsVectorLayer(csv_info, "Locations", "memory")
-
-    try:
-        # Extracts desired attribute names from the csv headers
-        new_prov = create_location_layers_from_csv(merged_csv_contents, headers, layer)
-        # attributes go up to heating details, skipping general property info
-        attributes = list(itertools.dropwhile(lambda x: x != "Electricity", headers))
-        create_heatmap_layers(new_prov, attributes, heating_layers)
-    except Exception as e:
-        logging.error(e)
-        logging.error(traceback.format_exc())
-
-
 def read_demographic_data(directory: Path):
     # All files in the other folders, in the layers folder, will be processed individually
     for idx, file_path in enumerate(directory.glob("*.csv")):
@@ -684,19 +689,27 @@ def read_shape_file(directory: Path):
 
 
 # Create layer groups for heating information and demographic information
-heating_layers = QgsLayerTreeGroup("Heating Types")
-demographic_layers = QgsLayerTreeGroup("Demographic Info")
+# heating_layers = QgsLayerTreeGroup("Heating Types")
+# demographic_layers = QgsLayerTreeGroup("Demographic Info")
 
 # Calls to read specific folders within the layers folder
 # To read files in a new folder, add a new line with the folder to be read as the second parameter
-read_housing_data(METRO_DIRECTORY)
+# read_housing_data_and_create_location_points_layer(METRO_DIRECTORY)
+(
+    csv_layer,
+    csv_contents,
+    csv_headers,
+    csv_attributes,
+) = read_housing_data_and_create_location_points_layer(METRO_DIRECTORY)
+location_layer = create_location_layers_from_csv(csv_contents, csv_headers, csv_layer)
 # read_demographic_data(CENSUS_DIRECTORY)
-# shapefile?
 
-heating_layers.updateChildVisibilityMutuallyExclusive()
-root.insertChildNode(1, heating_layers)
-demographic_layers.updateChildVisibilityMutuallyExclusive()
-root.insertChildNode(2, demographic_layers)
+project.addMapLayer(location_layer)
+
+# heating_layers.updateChildVisibilityMutuallyExclusive()
+# root.insertChildNode(1, heating_layers)
+# demographic_layers.updateChildVisibilityMutuallyExclusive()
+# root.insertChildNode(2, demographic_layers)
 
 # Run the QGIS application event loop
 # qgs.exec_()
