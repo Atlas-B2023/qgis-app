@@ -38,7 +38,7 @@ from sys import exit
 #! this should be a sibling folder to the two repository folders
 PROJECT_DIRECTORY = Path(__file__).parent.parent
 PARENT_DIRECTORY = PROJECT_DIRECTORY.parent
-QGIS_PROJECT_FILE_DIRECTORY = PARENT_DIRECTORY / "currentqgismap"
+QGIS_PROJECT_FILE_DIRECTORY = PARENT_DIRECTORY / "QGIS Map"
 # new_current_gis_map
 
 # recurse
@@ -231,6 +231,7 @@ def create_locations_layer_from_csv(
     return locations_layer
 
 
+# Saves the location and heatmap layers in a database
 def save_location_heatmap_gpkg(layer: QgsVectorLayer):
     if LOCATION_HEATMAP_GPKG_OUTPUT.exists():
         # update
@@ -257,6 +258,39 @@ def save_location_heatmap_gpkg(layer: QgsVectorLayer):
         error = QgsVectorFileWriter.writeAsVectorFormatV3(
             layer,
             str(LOCATION_HEATMAP_GPKG_OUTPUT),
+            project.transformContext(),
+            options,
+        )
+    return error[0]
+
+
+# Saves the demographic layers in a database
+def save_census_data_gpkg(layer: QgsVectorLayer):
+    if CENSUS_DATA_GPKG_OUTPUT.exists():
+        # update
+        options = QgsVectorFileWriter.SaveVectorOptions()
+        options.layerName = layer.name()
+        options.fileEncoding = layer.dataProvider().encoding()
+        options.attributes = layer.attributeList()  # just putting for sakes
+        options.actionOnExistingFile = (
+            QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
+        )
+
+        error = QgsVectorFileWriter.writeAsVectorFormatV3(
+            layer,
+            str(CENSUS_DATA_GPKG_OUTPUT),
+            project.transformContext(),
+            options,
+        )
+    else:
+        # create
+        options = QgsVectorFileWriter.SaveVectorOptions()
+        options.layerName = layer.name()
+        options.attributes = layer.attributeList()
+
+        error = QgsVectorFileWriter.writeAsVectorFormatV3(
+            layer,
+            str(CENSUS_DATA_GPKG_OUTPUT),
             project.transformContext(),
             options,
         )
@@ -356,10 +390,13 @@ def create_heatmap_layers(
 # Used to create heatmap layers from csv demographic data
 def create_demographic_layers(
     attributes: typing.List[str],
-    file_path: Path,
-    demographic: QgsLayerTreeGroup,
-    idx: int,
-) -> None:
+    file_path: Path
+) -> typing.List[QgsVectorLayer]:
+    
+    demo_layers: list[QgsVectorLayer] = []
+    doc = QDomDocument()
+    read_write_context = QgsReadWriteContext()
+    
     # Create a dictionary of demographic variables as related to zipcodes
     with open(file_path, encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
@@ -370,7 +407,8 @@ def create_demographic_layers(
             base_layer = layer.clone()
             break
 
-    csv_groups = QgsLayerTreeGroup(f"{file_path.stem}")
+    # csv_groups = QgsLayerTreeGroup(f"{file_path.stem}")
+    
 
     # Create a layer for each attribute in heating_attributes
     for index, attribute_name in enumerate(attributes):
@@ -404,86 +442,100 @@ def create_demographic_layers(
             )
         else:
             continue
-
+        
         # Colors the zip codes per the selected attribute's value
-        try:
-            unique_values = demo_layer.uniqueValues(
-                demo_layer.fields().indexOf(attribute_name)
-            )
-            new_uniques = []
-            for value in unique_values:
-                if value is not None:
-                    try:
-                        formatted_val = float(value)
-                    except ValueError:
-                        continue
-                    if formatted_val < 0.0:
-                        continue
-                    else:
-                        new_uniques.append(formatted_val)
-            if len(new_uniques) == 0:
-                continue
-            try:
-                unique_max = max(new_uniques)
-            except ValueError:
-                logging.warning(f"failed max: {unique_values = }, {attribute_name = }")
-            try:
-                unique_min = min(new_uniques)
-            except ValueError:
-                logging.warning(f"failed min: {unique_values = }, {attribute_name = }")
-            color_ramp = QgsGradientColorRamp(
-                QColor(255, 255, 255, 160), QColor(0, 0, 255, 160)
-            )
-
-            renderer = QgsCategorizedSymbolRenderer(attribute_name)
-            for value in new_uniques:
-                symbol = QgsSymbol.defaultSymbol(demo_layer.geometryType())
-                layer = symbol.symbolLayer(0)
-                translated_val = translate(value, unique_min, unique_max, 0, 1)
-                layer.setColor(color_ramp.color(translated_val))
-                category = QgsRendererCategory(value, symbol, str(value))
-                renderer.addCategory(category)
-
-            error = QgsVectorFileWriter.writeAsVectorFormat(
-                demo_layer,
-                str(PROJECT_DIRECTORY / f"Demo - {attribute_name}.gpkg"),
-                "UTF-8",
-                demo_layer.crs(),
-                "GPKG",
-            )
-
-            if error[0] == QgsVectorFileWriter.WriterError.NoError:
-                shape_file_vector = QgsVectorLayer(
-                    str(PROJECT_DIRECTORY / f"Demo - {attribute_name}.gpkg"),
-                    f"{attribute_name}.gpkg",
-                    "ogr",
-                )
-                logging.info(f"Heatmap - {attribute_name}.gpkg file saved")
-                # for some reason the writer doesnt save the crs info
-                shape_file_vector.setCrs(demo_layer.crs())
-                # mutate var so that its now pointing to the
-                demo_layer = shape_file_vector
-
-            else:
-                logging.info(f"Could not save Demo - {attribute_name}.gpkg")
-
-            demo_layer.setRenderer(renderer)
-        except Exception:
-            logging.error(traceback.format_exc())
-
-        # Add the layer to the Layer Tree
-        csv_groups.insertChildNode(
-            attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer)
+        unique_values = demo_layer.uniqueValues(
+            demo_layer.fields().indexOf(attribute_name)
         )
-        csv_groups.updateChildVisibilityMutuallyExclusive()
+        new_uniques = []
+        for value in unique_values:
+            if value is not None:
+                try:
+                    formatted_val = float(value)
+                except ValueError:
+                    continue
+                if formatted_val < 0.0:
+                    continue
+                else:
+                    new_uniques.append(formatted_val)
+        if len(new_uniques) == 0:
+            continue
+        try:
+            unique_max = max(new_uniques)
+        except ValueError:
+            logging.warning(f"failed max: {unique_values = }, {attribute_name = }")
+        try:
+            unique_min = min(new_uniques)
+        except ValueError:
+            logging.warning(f"failed min: {unique_values = }, {attribute_name = }")
+        color_ramp = QgsGradientColorRamp(
+            QColor(255, 255, 255, 160), QColor(0, 0, 255, 160)
+        )
+        
+        renderer = QgsCategorizedSymbolRenderer(attribute_name)
+        for value in new_uniques:
+            symbol = QgsSymbol.defaultSymbol(demo_layer.geometryType())
+            layer = symbol.symbolLayer(0)
+            translated_val = translate(value, unique_min, unique_max, 0, 1)
+            layer.setColor(color_ramp.color(translated_val))
+            category = QgsRendererCategory(value, symbol, str(value))
+            renderer.addCategory(category)
+        # error = QgsVectorFileWriter.writeAsVectorFormat(
+        #     demo_layer,
+        #     str(CENSUS_DATA_GPKG_OUTPUT / f"Demo-{attribute_name}.gpkg"),
+        #     "UTF-8",
+        #     demo_layer.crs(),
+        #     "GPKG",
+        # )
+        # if error[0] == QgsVectorFileWriter.WriterError.NoError:
+        #     shape_file_vector = QgsVectorLayer(
+        #         str(CENSUS_DATA_GPKG_OUTPUT / f"Demo-{attribute_name}.gpkg"),
+        #         f"{attribute_name}.gpkg",
+        #         "ogr",
+        #     )
+        #     logging.info(f"Demo-{attribute_name}.gpkg file saved")
+        #     # for some reason the writer doesnt save the crs info
+        #     shape_file_vector.setCrs(demo_layer.crs())
+        #     # mutate var so that its now pointing to the
+        #     demo_layer = shape_file_vector
+        # else:
+        #     logging.info(f"Could not save Demo-{attribute_name}.gpkg")
+        demo_layer.setRenderer(renderer)
+        
+        demo_layer.exportNamedStyle(doc, read_write_context)
+        demo_layer.commitChanges()
+        
+        error = save_census_data_gpkg(demo_layer)
+
+        if error == QgsVectorFileWriter.WriterError.NoError:
+            demo_layer_path = (
+                f"{CENSUS_DATA_GPKG_OUTPUT}|layername={demo_layer.name()}"
+            )
+            demo_layer = QgsVectorLayer(
+                demo_layer_path, f"Demo-{attribute_name}", "ogr"
+            )
+            demo_layer.importNamedStyle(doc)
+            demo_layer.saveStyleToDatabase(
+                demo_layer.name(), f"{demo_layer.name()} style", True, ""
+            )
+            demo_layers.append(demo_layer)
+        else:
+            logging.error(
+                f"Encountered error {error} when writing {demo_layer.name()}"
+            )
+        # Add the layer to the Layer Tree
+        # demo_layers.append(demo_layer)
+        # csv_groups.insertChildNode(
+        #     attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer)
+        # )
+        # csv_groups.updateChildVisibilityMutuallyExclusive()
 
         layers.append(demo_layer)
-
         # Used to limit number of layers generated for testing
         # if index == 6:
         #     logging.info(index)
         #     break
-    demographic.insertChildNode(idx, csv_groups)
+    return demo_layers
 
 
 # Creates heatmap layers for csvs that are grouped in twos
@@ -501,24 +553,36 @@ def demographics_groups_of_two(
     demo_prov = demo_layer.dataProvider()
     original_fields = base_layer.fields()
     demo_prov.addAttributes(original_fields.toList())
-
+    logging.info("Set up layer")
+    
     demo_layer.triggerRepaint()
     demo_fields = demo_prov.fields()
 
+    logging.info("Start editing")
     demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
+    logging.info("Here 1")
     for ftr in base_layer.getFeatures():
         new_ftr = QgsFeature()
+        logging.info("Here 2")
         new_ftr.setGeometry(ftr.geometry())
+        logging.info("Here 3")
         new_ftr.setAttributes(ftr.attributes())
+        logging.info("Here 4")
         demo_layer.addFeature(new_ftr)
+        logging.info("Here 5")
     demo_layer.loadNamedStyle(base_layer.styleURI())
+    logging.info("Here 6")
     demo_layer.styleManager().copyStylesFrom(base_layer.styleManager())
+    logging.info("Here 7")
+    demo_layer.commitChanges()
 
+    logging.info("Start editing again")
     demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
     demo_layer.deleteAttributes(
         [27, 28, 29, 30]
     )  # Makes sure these attributes are empty before filling them
-
+    logging.info("Attributed deleted")
+    
     for feature in demo_layer.getFeatures():
         zip_code = feature.attribute("ZCTA5")
 
@@ -528,11 +592,13 @@ def demographics_groups_of_two(
             new_feat = demo_layer.getFeature(feat_id)
             features_size = new_feat.fields().size()
 
+            logging.info("Attempting resize")
             if features_size == 27:
                 new_feat.resizeAttributes(31)
                 features_size = new_feat.fields().size()
 
-            # Adds the group of four attributes to the zip code
+            logging.info("Adding attributes")
+            # Adds the group of two attributes to the zip code
             # If the index statement was changed above, the values in range will also need to be changed
             for i in range(0, 2):
                 if attributes[index + i] == "ZCTA":
@@ -553,7 +619,7 @@ def demographics_groups_of_two(
                     new_feat.setAttribute(features_size + i - 4, value)
                 else:
                     new_feat.setAttribute(field_idx, value)
-
+            logging.info("Starting update")
             demo_layer.updateFeature(new_feat)
     return demo_layer
 
@@ -638,7 +704,9 @@ def translate(value, fromMin, fromMax, toMin, toMax):
     return toMin + (valueScaled * toSpan)
 
 
-def read_demographic_data(directory: Path):
+def read_demographic_data(directory: Path) -> typing.List[typing.List[QgsVectorLayer]]:
+    demo_groups = []
+    
     # All files in the other folders, in the layers folder, will be processed individually
     for idx, file_path in enumerate(directory.glob("*.csv")):
         # create vector layer from csv files
@@ -659,7 +727,8 @@ def read_demographic_data(directory: Path):
         except ValueError:
             logging.warn(f"{file_path} doesn't have state")
 
-        create_demographic_layers(headers, file_path, demographic_layers, idx)
+        demo_groups.append(create_demographic_layers(headers, file_path))
+    return demo_groups
 
 
 def read_shape_file(directory: Path):
@@ -684,7 +753,7 @@ def read_shape_file(directory: Path):
 ) = read_housing_data_and_create_temp_location_points_layer(METRO_DIRECTORY)
 location_layer = create_locations_layer_from_csv(csv_contents, csv_headers, csv_layer)
 heatmap_layers = create_heatmap_layers(location_layer.dataProvider(), csv_attributes)
-# read_demographic_data(CENSUS_DIRECTORY)
+demo_groups = read_demographic_data(CENSUS_DIRECTORY)
 
 # add all layers to global LAYERS = [], and for each LAYER in LAYERS, project.addmaplayer(layer,...)
 project.addMapLayer(location_layer)
@@ -695,6 +764,13 @@ assert isinstance(heatmap_group, QgsLayerTreeGroup)
 for index, placed_layer in enumerate(heatmap_layers):
     project.addMapLayer(heatmap_layers[index], False)
     heatmap_group.addLayer(heatmap_layers[index])
+    
+# Have to rearrange before saving
+demo_group = layer_tree_root.addGroup("Demographic Data")
+assert isinstance(demo_group, QgsLayerTreeGroup)
+for index, placed_layer in enumerate(demo_groups):
+    project.addMapLayer(demo_groups[index], False)
+    demo_group.addLayer(demo_groups[index])
 
 logging.debug("Last one")
 
