@@ -38,9 +38,9 @@ from sys import exit
 #! this should be a sibling folder to the two repository folders
 PROJECT_DIRECTORY = Path(__file__).parent.parent
 PARENT_DIRECTORY = PROJECT_DIRECTORY.parent
-QGIS_PROJECT_FILE_DIRECTORY = PARENT_DIRECTORY / "new_current_gis_map"
-# project_directory = os.path.dirname(QgsProject.instance().fileName())
-# parent_directory = os.path.dirname(PROJECT_DIRECTORY)
+QGIS_PROJECT_FILE_DIRECTORY = PARENT_DIRECTORY / "current_qgis_map"
+# new_current_gis_map
+
 # recurse
 METRO_DIRECTORY = (
     Path(__file__).parent.parent.parent
@@ -673,7 +673,7 @@ def read_shape_file(directory: Path):
 
 
 # Create layer groups for heating information and demographic information
-# heating_layers = QgsLayerTreeGroup("Heating Types")
+# heatmap_layer_tree_group = QgsLayerTreeGroup("Heating Types")
 # demographic_layers = QgsLayerTreeGroup("Demographic Info")
 
 (
@@ -683,14 +683,28 @@ def read_shape_file(directory: Path):
     csv_attributes,
 ) = read_housing_data_and_create_temp_location_points_layer(METRO_DIRECTORY)
 location_layer = create_locations_layer_from_csv(csv_contents, csv_headers, csv_layer)
-heat_map_layers = create_heatmap_layers(location_layer.dataProvider(), csv_attributes)
+heatmap_layers = create_heatmap_layers(location_layer.dataProvider(), csv_attributes)
 # read_demographic_data(CENSUS_DIRECTORY)
 
 # add all layers to global LAYERS = [], and for each LAYER in LAYERS, project.addmaplayer(layer,...)
 project.addMapLayer(location_layer)
-for layer in heat_map_layers:
+# heatmap_layer_tree_group.addLayer()
+for layer in heatmap_layers:
     project.addMapLayer(layer)
 
+
+# can display but wont save...
+# heatmap_group = QgsLayerTreeGroup("Heating Types")
+# for index, placed_layer in enumerate(heatmap_layers):
+#     layer = layer_tree_root.findLayer(placed_layer.id())
+#     clone = layer.clone()
+#     layer_tree_root.removeChildNode(layer)
+#     # error = save_location_heatmap_gpkg(clone.layer())
+#     heatmap_group.insertChildNode(index, clone)
+# layer_tree_root.insertChildNode(1, heatmap_group)
+
+
+# layer_tree_root.insertChildNode(1, heatmap_layer_tree_group)
 # heatmap_tree_group.updateChildVisibilityMutuallyExclusive()
 # layer_tree_root.insertChildNode(1, heatmap_tree_group)
 # demographic_layers.updateChildVisibilityMutuallyExclusive()
