@@ -17,9 +17,11 @@ from qgis.core import (
     QgsCategorizedSymbolRenderer,
     QgsSymbol,
     QgsCoordinateReferenceSystem,
+    QgsReadWriteContext,
 )
 from PyQt5.QtCore import QVariant
 from qgis.PyQt.QtGui import QColor
+from qgis.PyQt.QtXml import QDomDocument
 import logging
 import csv
 import typing
@@ -273,9 +275,11 @@ def create_heatmap_layers(
         attributes (typing.List[str]): _description_
     """
     heating_layers: list[QgsVectorLayer] = []
+    doc = QDomDocument()
+    read_write_context = QgsReadWriteContext()
     # Create a heatmap layer for each attribute in heating_attributes
     for attribute_name in attributes:
-        #horizontal
+        # horizontal
         # Checks if there is already a layer for an attribute, and if not it creates one. eg if there is no diesel in the csv, still make the diesel layer
         heatmap_layer = None
         # If group is empty or if layer for attribute doesn't exist, create the layer. else get that layer
@@ -324,9 +328,10 @@ def create_heatmap_layers(
         )
         heatmap_layer.setRenderer(heatmap_renderer)
         # heatmap_layer.setSubLayerVisibility(attribute_name, False)
+        heatmap_layer.exportNamedStyle(doc, read_write_context)
         heatmap_layer.commitChanges()
 
-        error = save_location_heatmap_gpkg(heatmap_layer)  # will constantly override
+        error = save_location_heatmap_gpkg(heatmap_layer)
 
         if error == QgsVectorFileWriter.WriterError.NoError:
             heatmap_layer_path = (
@@ -335,12 +340,16 @@ def create_heatmap_layers(
             heatmap_layer = QgsVectorLayer(
                 heatmap_layer_path, f"Heatmap-{attribute_name}", "ogr"
             )
+            heatmap_layer.importNamedStyle(doc)
+            heatmap_layer.saveStyleToDatabase(
+                heatmap_layer.name(), f"{heatmap_layer.name()} style", True, ""
+            )
             heating_layers.append(heatmap_layer)
         else:
             logging.error(
                 f"Encountered error {error} when writing {heatmap_layer.name()}"
             )
-    
+
     return heating_layers
 
 
@@ -674,9 +683,7 @@ def read_shape_file(directory: Path):
     csv_attributes,
 ) = read_housing_data_and_create_temp_location_points_layer(METRO_DIRECTORY)
 location_layer = create_locations_layer_from_csv(csv_contents, csv_headers, csv_layer)
-heat_map_layers = create_heatmap_layers(
-    location_layer.dataProvider(), csv_attributes
-)
+heat_map_layers = create_heatmap_layers(location_layer.dataProvider(), csv_attributes)
 # read_demographic_data(CENSUS_DIRECTORY)
 
 # add all layers to global LAYERS = [], and for each LAYER in LAYERS, project.addmaplayer(layer,...)
