@@ -236,14 +236,9 @@ def save_location_heatmap_gpkg(layer: QgsVectorLayer):
         options.layerName = layer.name()
         options.fileEncoding = layer.dataProvider().encoding()
         options.attributes = layer.attributeList()  # just putting for sakes
-        if "location" in layer.name().lower():
-            options.actionOnExistingFile = (
-                QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
-            )
-        else:
-            options.actionOnExistingFile = (
-                QgsVectorFileWriter.ActionOnExistingFile.AppendToLayerAddFields
-            )
+        options.actionOnExistingFile = (
+            QgsVectorFileWriter.ActionOnExistingFile.CreateOrOverwriteLayer
+        )
 
         error = QgsVectorFileWriter.writeAsVectorFormatV3(
             layer,
@@ -270,37 +265,33 @@ def save_location_heatmap_gpkg(layer: QgsVectorLayer):
 def create_heatmap_layers(
     location_layer_prov: QgsVectorDataProvider,
     attributes: typing.List[str],
-) -> QgsLayerTreeGroup:
+) -> list[QgsVectorLayer]:
     """Generate heat maps for the given attributes. Make sure that when you are rendering that you add all of these to a tree
 
     Args:
         prov (QgsVectorDataProvider): _description_
         attributes (typing.List[str]): _description_
     """
-    heating_layers_tree_group = QgsLayerTreeGroup("Heating Types")
+    heating_layers: list[QgsVectorLayer] = []
     # Create a heatmap layer for each attribute in heating_attributes
     for attribute_name in attributes:
         #horizontal
         # Checks if there is already a layer for an attribute, and if not it creates one. eg if there is no diesel in the csv, still make the diesel layer
         heatmap_layer = None
-        first = True
         # If group is empty or if layer for attribute doesn't exist, create the layer. else get that layer
-        if len(heating_layers_tree_group.children()) == 0:
+        if not heating_layers:
             heatmap_layer = QgsVectorLayer(
                 "Point?crs=EPSG:4326", f"Heatmap-{attribute_name}", "memory"
             )
-            first = True
         else:
-            for child_node in heating_layers_tree_group.children():
-                if child_node.name() == f"Heatmap-{attribute_name}":
-                    heatmap_layer = child_node.layer()
-                    first = False
+            for index, temp_layer in enumerate(heating_layers):
+                if temp_layer.name() == f"Heatmap-{attribute_name}":
+                    heatmap_layer = heating_layers[index]
                     break
                 else:
                     heatmap_layer = QgsVectorLayer(
                         "Point?crs=EPSG:4326", f"Heatmap-{attribute_name}", "memory"
                     )
-                    first = True
         try:
             assert heatmap_layer is not None
         except AssertionError:
@@ -308,19 +299,11 @@ def create_heatmap_layers(
                 f"Heatmap for {attribute_name} was None after trying to process."
             )
             exit()
-
+        new_feats = []
         heatmap_layer.startEditing()
         heatmap_provider = heatmap_layer.dataProvider()
-        heatmap_renderer = QgsHeatmapRenderer()
-        heatmap_renderer.setWeightExpression("1")
-        heatmap_renderer.setRadius(10)
-        heatmap_renderer.setColorRamp(
-            QgsGradientColorRamp(QColor(255, 16, 16, 0), QColor(67, 67, 215, 255))
-        )
-
         # Determine if a feature is worth putting on a layer
         # vertical
-        new_feats = []
         for feat in location_layer_prov.getFeatures():
             try:
                 # value inside the csv file for wether a house has Electricity, NG, etc
@@ -330,12 +313,17 @@ def create_heatmap_layers(
                 logging.error(
                     f"Could not find {attribute_name} field in {heatmap_layer.name()}"
                 )
-
-        # Update the layer with the new features
         heatmap_provider.addFeatures(new_feats)
         heatmap_layer.updateExtents()
+
+        heatmap_renderer = QgsHeatmapRenderer()
+        heatmap_renderer.setWeightExpression("1")
+        heatmap_renderer.setRadius(10)
+        heatmap_renderer.setColorRamp(
+            QgsGradientColorRamp(QColor(255, 16, 16, 0), QColor(67, 67, 215, 255))
+        )
         heatmap_layer.setRenderer(heatmap_renderer)
-        heatmap_layer.setSubLayerVisibility(attribute_name, False)
+        # heatmap_layer.setSubLayerVisibility(attribute_name, False)
         heatmap_layer.commitChanges()
 
         error = save_location_heatmap_gpkg(heatmap_layer)  # will constantly override
@@ -347,25 +335,13 @@ def create_heatmap_layers(
             heatmap_layer = QgsVectorLayer(
                 heatmap_layer_path, f"Heatmap-{attribute_name}", "ogr"
             )
+            heating_layers.append(heatmap_layer)
         else:
             logging.error(
                 f"Encountered error {error} when writing {heatmap_layer.name()}"
             )
-
-        # Add the heatmap layer to the Layer Tree
-        if first:
-            logging.info(
-                f"Adding layer {heatmap_layer.name()} to heating layers tree group"
-            )
-            heating_layers_tree_group.insertChildNode(
-                attributes.index(attribute_name), QgsLayerTreeLayer(heatmap_layer)
-            )
-
-    # for each layer, save as gpkg, and return them
-    logging.info(
-        f"Before return {[child.name() for child in heating_layers_tree_group.children()]}"
-    )
-    return heating_layers_tree_group
+    
+    return heating_layers
 
 
 # Used to create heatmap layers from csv demographic data
@@ -698,18 +674,21 @@ def read_shape_file(directory: Path):
     csv_attributes,
 ) = read_housing_data_and_create_temp_location_points_layer(METRO_DIRECTORY)
 location_layer = create_locations_layer_from_csv(csv_contents, csv_headers, csv_layer)
-heatmap_tree_group = create_heatmap_layers(
+heat_map_layers = create_heatmap_layers(
     location_layer.dataProvider(), csv_attributes
 )
-logging.info(f"{[child.name() for child in heatmap_tree_group.children()]}")
 # read_demographic_data(CENSUS_DIRECTORY)
 
 # add all layers to global LAYERS = [], and for each LAYER in LAYERS, project.addmaplayer(layer,...)
 project.addMapLayer(location_layer)
+for layer in heat_map_layers:
+    project.addMapLayer(layer)
 
-heatmap_tree_group.updateChildVisibilityMutuallyExclusive()
-layer_tree_root.insertChildNode(1, heatmap_tree_group)
+# heatmap_tree_group.updateChildVisibilityMutuallyExclusive()
+# layer_tree_root.insertChildNode(1, heatmap_tree_group)
 # demographic_layers.updateChildVisibilityMutuallyExclusive()
 # root.insertChildNode(2, demographic_layers)
 
 logging.debug("Last one")
+
+# QgsProject.instance().layerTreeRoot().findLayer(layer_id/layername).setItemVisibilityChecked(False)
