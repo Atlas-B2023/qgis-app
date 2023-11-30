@@ -601,7 +601,7 @@ def demographics_groups_of_two(
             # Adds the group of two attributes to the zip code
             # If the index statement was changed above, the values in range will also need to be changed
             for i in range(0, 2):
-                if attributes[index + i] == "ZCTA":
+                if attributes[index + i] == "ZCTA" or attributes[index] == "ZCTA":
                     break
                 demo_layer.addAttribute(
                     QgsField(attributes[index + i], QVariant.String)
