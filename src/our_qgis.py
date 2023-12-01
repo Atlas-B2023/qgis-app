@@ -25,7 +25,6 @@ import typing
 import itertools
 from pathlib import Path
 from sys import exit
-import time
 
 # Keep in mind that this program will be running with python 3.9
 
@@ -586,7 +585,9 @@ def create_demographic_layers(file_path: Path) -> typing.List[QgsVectorLayer]:
         if "S1901" in file_path.stem:
             for attribute in S1901_ATTRIBUTES:
                 logging.info(f"{attribute =}")
-                demographics_groups_of_two(base_layer, attribute, zip_data_dict)
+                demographics_groups_of_two(
+                    base_layer, attribute, S1901_ALLOW_LIST, zip_data_dict
+                )
                 # demo_layer = demographics_groups_of_two(base_layer, attribute, zip_data_dict)
     # elif range_type == 4:
     #     if "S1501" in file_path.stem:
@@ -736,9 +737,14 @@ def chunked(it, size):
 def demographics_groups_of_two(
     base_layer: QgsVectorLayer,
     attr_name: str,
+    table_allow_list: list,
     zip_data_dict: dict[str, dict[str, str]],
 ):
     """create layer based on census column
+
+
+    Note:
+        Features are rows in a layer, fields are columns in a layer. attributes are cells.
 
     Args:
         base_layer (QgsVectorLayer): base layer
@@ -773,91 +779,106 @@ def demographics_groups_of_two(
     )  # Makes sure these attributes are empty before filling them. are we sure we want to delete 27
     demo_layer.commitChanges()
 
-    # loop over all zip code polygons in the demo layer (copied from base layer)
-    for feature in demo_layer.getFeatures():
-        zip_code = feature.attribute("ZCTA5")
-
-        if (zip_code in zip_data_dict.keys()) and (
-            attr_name not in demo_fields.names()
-        ):
-            feat_id = feature.id()
-            new_feat = demo_layer.getFeature(feat_id)
-
-            if new_feat.fields().size() != 29:
-                new_feat.resizeAttributes(29)
-            features_size = new_feat.fields().size()
-
-            for chunk in chunked(zip_data_dict.get(zip_code), 2):
-                if "ZCTA" in chunk or len(chunk) != 2:
-                    break
-                if chunk[0] == attr_name:
-                    next_attr_name = chunk[1]
-                    assert isinstance(next_attr_name, str)
-
-                    demo_layer.startEditing()
-                    add_attr_as_attr = demo_layer.addAttribute(
-                        QgsField(attr_name, QVariant.String)
-                    )
-                    add_next_attr_as_attr = demo_layer.addAttribute(
-                        QgsField(next_attr_name, QVariant.String)
-                    )
-                    demo_layer.commitChanges()
-
-                    append_success_attr_name = new_feat.fields().append(
-                        QgsField(attr_name, QVariant.String),
-                        # originIndex=features_size + i,
-                    )
-                    append_success_next_attr_name = new_feat.fields().append(
-                        QgsField(next_attr_name, QVariant.String),
-                        # originIndex=features_size + i,
-                    )
-
-                    logging.info(
-                        f"{add_attr_as_attr = }, {append_success_attr_name =}, {zip_code =}"
-                    )
-                    logging.info(
-                        f"{add_next_attr_as_attr = }, {append_success_next_attr_name =}, {zip_code =}"
-                    )
-
-                    field_idx = new_feat.fields().indexOf(attr_name)
-                    next_field_idx = new_feat.fields().indexOf(next_attr_name)
-
-                    attr_value = zip_data_dict[zip_code].get(attr_name)
-                    next_attr_value = zip_data_dict[zip_code].get(next_attr_name)
-                    # logging.info(f"{next_attr_value = }")
-                    # logging.info(
-                    #     f"{new_feat.fields().isEmpty() = },{new_feat.fields().toList() = },{new_feat.fields().indexFromName(next_attr_name) = }"
-                    # )
-                    assert attr_value is not None
-                    assert next_attr_value is not None
-
-                    if (
-                        field_idx == -1 and features_size == 27
-                    ):  # first file loop is always messed up
-                        new_feat.setAttribute(features_size, attr_value)
-                        new_feat.setAttribute(features_size + 1, next_attr_value)
-                        # logging.info(f"length of field {attr_name}: {new_feat.fields().field(new_feat.fields().indexOf(attr_name)).length()}")
-                    elif (
-                        field_idx == -1 and not features_size == 27
-                    ):  # second and subsequent runs, and first layer in this file
-                        new_feat.setAttribute(features_size - 2, attr_value)
-                        new_feat.setAttribute(features_size + 1 - 2, next_attr_value)
-                        # logging.info(f"length of field {attr_name}: {new_feat.fields().field(new_feat.fields().indexOf(attr_name)).length()}")
-                    else:  # other wise
-                        new_feat.setAttribute(field_idx, attr_value)
-                        new_feat.setAttribute(next_field_idx, next_attr_value)
-                        logging.info(
-                            f"length of field {attr_name}: {new_feat.fields().field(new_feat.fields().indexOf(attr_name)).length()}"
-                        )
-
-                    # target_zip_dict = zip_data_dict.get(zip_code_feature)
-                    # assert target_zip_dict is not None # shouldnt happen due to if statement. if key exist and val is none, issue in csv
-                    # next_val_name = target_zip_dict.get(next_attr_name)
-                    # assert next_val_name is not None # shouldnt happen due to if statement. if key exist and val is none, issue in csv
-
+    # add the two related census column names as fields
+    for attr_chunk in chunked(table_allow_list, 2):
+        if len(attr_chunk) != 2:
+            break
+        logging.info(f"{len(attr_chunk)}, {attr_chunk[0]},{attr_chunk[1]}")
+        if attr_name == attr_chunk[0]: # might be able to get target index from tuple, and iterate over the tuple
             demo_layer.startEditing()
-            demo_layer.updateFeature(new_feat)
+            demo_prov.addAttributes([QgsField(attr_chunk[0], QVariant.Type.String)])
             demo_layer.commitChanges()
+            demo_layer.startEditing()
+            demo_prov.addAttributes([QgsField(attr_chunk[1], QVariant.Type.String)])
+            demo_layer.commitChanges()
+            break
+
+    logging.info(f"{demo_layer.fields().names() = }")
+    # loop over all zip code polygons in the demo layer (copied from base layer)
+    # for feature in demo_layer.getFeatures():
+    #     zip_code = feature.attribute("ZCTA5")
+
+    #     if (zip_code in zip_data_dict.keys()) and (
+    #         attr_name not in demo_fields.names()
+    #     ):
+    #         feat_id = feature.id()
+    #         new_feat = demo_layer.getFeature(feat_id)
+
+    #         if new_feat.fields().size() != 29:
+    #             new_feat.resizeAttributes(29)
+    #         features_size = new_feat.fields().size()
+
+    #         for chunk in chunked(zip_data_dict.get(zip_code), 2):
+    #             if "ZCTA" in chunk or len(chunk) != 2:
+    #                 break
+    #             if chunk[0] == attr_name:
+    #                 next_attr_name = chunk[1]
+    #                 assert isinstance(next_attr_name, str)
+
+    #                 demo_layer.startEditing()
+    #                 add_attr_as_attr = demo_layer.addAttribute(
+    #                     QgsField(attr_name, QVariant.String)
+    #                 )
+    #                 add_next_attr_as_attr = demo_layer.addAttribute(
+    #                     QgsField(next_attr_name, QVariant.String)
+    #                 )
+    #                 demo_layer.commitChanges()
+
+    #                 append_success_attr_name = new_feat.fields().append(
+    #                     QgsField(attr_name, QVariant.String),
+    #                     # originIndex=features_size + i,
+    #                 )
+    #                 append_success_next_attr_name = new_feat.fields().append(
+    #                     QgsField(next_attr_name, QVariant.String),
+    #                     # originIndex=features_size + i,
+    #                 )
+
+    #                 logging.info(
+    #                     f"{add_attr_as_attr = }, {append_success_attr_name =}, {zip_code =}"
+    #                 )
+    #                 logging.info(
+    #                     f"{add_next_attr_as_attr = }, {append_success_next_attr_name =}, {zip_code =}"
+    #                 )
+
+    #                 field_idx = new_feat.fields().indexOf(attr_name)
+    #                 next_field_idx = new_feat.fields().indexOf(next_attr_name)
+
+    #                 attr_value = zip_data_dict[zip_code].get(attr_name)
+    #                 next_attr_value = zip_data_dict[zip_code].get(next_attr_name)
+    #                 # logging.info(f"{next_attr_value = }")
+    #                 # logging.info(
+    #                 #     f"{new_feat.fields().isEmpty() = },{new_feat.fields().toList() = },{new_feat.fields().indexFromName(next_attr_name) = }"
+    #                 # )
+    #                 assert attr_value is not None
+    #                 assert next_attr_value is not None
+
+    #                 if (
+    #                     field_idx == -1 and features_size == 27
+    #                 ):  # first file loop is always messed up
+    #                     new_feat.setAttribute(features_size, attr_value)
+    #                     new_feat.setAttribute(features_size + 1, next_attr_value)
+    #                     # logging.info(f"length of field {attr_name}: {new_feat.fields().field(new_feat.fields().indexOf(attr_name)).length()}")
+    #                 elif (
+    #                     field_idx == -1 and not features_size == 27
+    #                 ):  # second and subsequent runs, and first layer in this file
+    #                     new_feat.setAttribute(features_size - 2, attr_value)
+    #                     new_feat.setAttribute(features_size + 1 - 2, next_attr_value)
+    #                     # logging.info(f"length of field {attr_name}: {new_feat.fields().field(new_feat.fields().indexOf(attr_name)).length()}")
+    #                 else:  # other wise
+    #                     new_feat.setAttribute(field_idx, attr_value)
+    #                     new_feat.setAttribute(next_field_idx, next_attr_value)
+    #                     logging.info(
+    #                         f"length of field {attr_name}: {new_feat.fields().field(new_feat.fields().indexOf(attr_name)).length()}"
+    #                     )
+
+    #                 # target_zip_dict = zip_data_dict.get(zip_code_feature)
+    #                 # assert target_zip_dict is not None # shouldnt happen due to if statement. if key exist and val is none, issue in csv
+    #                 # next_val_name = target_zip_dict.get(next_attr_name)
+    #                 # assert next_val_name is not None # shouldnt happen due to if statement. if key exist and val is none, issue in csv
+
+    #         demo_layer.startEditing()
+    #         demo_layer.updateFeature(new_feat)
+    #         demo_layer.commitChanges()
 
     project.addMapLayer(demo_layer)
 
@@ -979,9 +1000,9 @@ def read_shape_file(directory: Path):
 ) = read_housing_data_and_create_temp_location_points_layer(METRO_DIRECTORY)
 location_layer = create_locations_layer_from_csv(csv_contents, csv_headers, csv_layer)
 heatmap_layers = create_heatmap_layers(location_layer.dataProvider(), csv_attributes)
-logging.info(f"{time.time() = }")
+# logging.info(f"{time.time() = }")
 demo_groups = read_demographic_data(CENSUS_DIRECTORY)
-logging.info(f"{time.time() = }")
+# logging.info(f"{time.time() = }")
 
 # add all layers to global LAYERS = [], and for each LAYER in LAYERS, project.addmaplayer(layer,...)
 project.addMapLayer(location_layer)
