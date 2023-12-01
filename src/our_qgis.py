@@ -10,6 +10,7 @@ from qgis.core import (
     QgsHeatmapRenderer,
     QgsGradientColorRamp,
     QgsFeature,
+    QgsLayerTreeGroup,
     QgsMapLayer,
     QgsField,
     QgsCoordinateReferenceSystem,
@@ -698,7 +699,6 @@ def get_styled_demo_layer(table_attributes: list, demo_layer: QgsVectorLayer):
         new_layer.saveStyleToDatabase(
             new_layer.name(), f"{new_layer.name()} style", True, ""
         )
-        logging.info(f"{new_layer.isValid() = } for {demo_layer.name()}")
         return new_layer
     else:
         logging.error(f"Encountered error {error} when writing {demo_layer.name()}")
@@ -916,8 +916,11 @@ location_layer = create_locations_layer_from_csv(csv_contents, csv_headers, csv_
 heatmap_layers = create_heatmap_layers(location_layer.dataProvider(), csv_attributes)
 demo_groups = read_demographic_data(CENSUS_DIRECTORY)
 
-heatmap_tree_group = layer_tree_root.addGroup("Heating Types")
-demo_tree_group = layer_tree_root.addGroup("Demographics")
+heatmap_tree_group = QgsLayerTreeGroup("Heating Types")
+demo_tree_group = QgsLayerTreeGroup("Demographics")
+layer_tree_root.insertChildNode(0, heatmap_tree_group)
+layer_tree_root.insertChildNode(1, demo_tree_group)
+
 
 for i, layer in enumerate(heatmap_layers):
     project.addMapLayer(layer, False)
@@ -939,5 +942,5 @@ for i, table_layer_list in enumerate(demo_groups):
 heatmap_tree_group.setExpanded(False)
 demo_tree_group.setExpanded(False)
 
-project.addMapLayer(location_layer)
+project.addMapLayer(location_layer) #goes to front
 logging.debug("Last one")
