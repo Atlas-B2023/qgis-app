@@ -640,6 +640,8 @@ def color_demo_layer(
                     except AttributeError:
                         logging.info(f"{type(variant) = }, {variant = }")
                         exit()
+                elif variant is None:
+                    continue
                 else:
                     formatted_val = float(variant)
                 if formatted_val < 0.0:
