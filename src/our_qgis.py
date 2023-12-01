@@ -564,117 +564,212 @@ def create_demographic_layers(
     demo_layers: list[QgsVectorLayer] = []
     if "S1901" in file_path.stem:
         for attribute in S1901_ATTRIBUTES:
+            # if want to reduce ram, call color demo inside of demo groups so that we get returned a styled saved layer
             logging.info(f"Making layer for {attribute =}")
             demo_layers.append(
-                demographics_groups(
-                    range_type, base_layer, attribute, S1901_ALLOW_LIST, zip_data_dict
+                create_styled_demographics_group_layers(
+                    range_type,
+                    base_layer,
+                    attribute,
+                    S1901_ATTRIBUTES,
+                    S1901_ALLOW_LIST,
+                    zip_data_dict,
                 )
             )
         assert len(demo_layers) > 0
-        color_demo_layer(S1901_ATTRIBUTES, demo_layers)
+        # color_demo_layers(S1901_ATTRIBUTES, demo_layers)
     if "S1501" in file_path.stem:
         for attribute in S1501_ATTRIBUTES:
             logging.info(f"Making layer for {attribute =}")
             demo_layers.append(
-                demographics_groups(
-                    range_type, base_layer, attribute, S1501_ALLOW_LIST, zip_data_dict
+                create_styled_demographics_group_layers(
+                    range_type,
+                    base_layer,
+                    attribute,
+                    S1501_ATTRIBUTES,
+                    S1501_ALLOW_LIST,
+                    zip_data_dict,
                 )
             )
         assert len(demo_layers) > 0
-        color_demo_layer(S1501_ATTRIBUTES, demo_layers)
+        # color_demo_layers(S1501_ATTRIBUTES, demo_layers)
     if "DP05" in file_path.stem:
         for attribute in DP05_ATTRIBUTES:
             logging.info(f"Making layer for {attribute =}")
             demo_layers.append(
-                demographics_groups(
-                    range_type, base_layer, attribute, DP05_ALLOW_LIST, zip_data_dict
+                create_styled_demographics_group_layers(
+                    range_type,
+                    base_layer,
+                    attribute,
+                    DP05_ATTRIBUTES,
+                    DP05_ALLOW_LIST,
+                    zip_data_dict,
                 ),
             )
         assert len(demo_layers) > 0
-        color_demo_layer(DP05_ATTRIBUTES, demo_layers)
+        # color_demo_layers(DP05_ATTRIBUTES, demo_layers)
 
-    #save
-    doc = QDomDocument()
-    read_write_context = QgsReadWriteContext()
-    for layer in demo_layers:
-        layer.exportNamedStyle(doc, read_write_context)
-        error = save_census_data_gpkg(layer)
+    # save
+    # doc = QDomDocument()
+    # read_write_context = QgsReadWriteContext()
+    # for i, _ in enumerate(demo_layers):
+    #     demo_layers[i].exportNamedStyle(doc, read_write_context)
+    #     error = save_census_data_gpkg(demo_layers[i])
 
-        if error == QgsVectorFileWriter.WriterError.NoError:
-            demo_layer_path = f"{CENSUS_DATA_GPKG_OUTPUT}|layername={layer.name()}"
-            layer = QgsVectorLayer(demo_layer_path, f"Census-{layer.name()}", "ogr")
-            layer.importNamedStyle(doc)
-            layer.saveStyleToDatabase(layer.name(), f"{layer.name()} style", True, "")
-        else:
-            logging.error(f"Encountered error {error} when writing {layer.name()}")
+    #     if error == QgsVectorFileWriter.WriterError.NoError:
+    #         demo_layer_path = (
+    #             f"{CENSUS_DATA_GPKG_OUTPUT}|layername={demo_layers[i].name()}"
+    #         )
+    #         demo_layers[i] = QgsVectorLayer(
+    #             demo_layer_path, f"{demo_layers[i].name()}", "ogr"
+    #         )
+    #         demo_layers[i].importNamedStyle(doc)
+    #         demo_layers[i].saveStyleToDatabase(
+    #             demo_layers[i].name(), f"{demo_layers[i].name()} style", True, ""
+    #         )
+    #     else:
+    #         logging.error(
+    #             f"Encountered error {error} when writing {demo_layers[i].name()}"
+    #         )
     return demo_layers
 
 
-def color_demo_layer(
-    table_attributes: list[str], table_layers: list[QgsVectorLayer]
-) -> None:
-    """Modifies vector layer list elements to have a graduated color scheme based on their attributes
-
-    Args:
-        table_attributes (list[str]): _description_
-        table_layers (list[QgsVectorLayer]): _description_
-
-    Returns:
-        list[QgsVectorLayer]: _description_
-    """
-    for cur_layer in table_layers:
-        for field_name in cur_layer.fields().names():
-            if field_name not in table_attributes:
+def get_styled_demo_layer(table_attributes: list, demo_layer: QgsVectorLayer):
+    for field_name in demo_layer.fields().names():
+        if field_name not in table_attributes:
+            continue
+        unique_values = demo_layer.uniqueValues(demo_layer.fields().indexOf(field_name))
+        new_uniques = []
+        for variant in unique_values:
+            if isinstance(variant, QVariant):
+                try:
+                    if variant.isNull():
+                        continue
+                    else:
+                        raise AttributeError
+                except AttributeError:
+                    logging.info(f"{type(variant) = }, {variant = }")
+                    exit()
+            elif variant is None:
                 continue
-            unique_values = cur_layer.uniqueValues(
-                cur_layer.fields().indexOf(field_name)
-            )
-            new_uniques = []
-            for variant in unique_values:
-                if isinstance(variant, QVariant):
-                    try:
-                        if variant.isNull():
-                            continue
-                        else:
-                            raise AttributeError
-                    except AttributeError:
-                        logging.info(f"{type(variant) = }, {variant = }")
-                        exit()
-                elif variant is None:
-                    continue
-                else:
-                    formatted_val = float(variant)
-                if formatted_val < 0.0:
-                    continue
-                new_uniques.append(formatted_val)
-
-            if len(new_uniques) == 0:
-                # this shouldnt hit, should always have at least one None in list
+            else:
+                formatted_val = float(variant)
+            if formatted_val < 0.0:
                 continue
-            try:
-                unique_max = max(new_uniques)
-            except ValueError:
-                continue
-            try:
-                unique_min = min(new_uniques)
-            except ValueError:
-                continue
+            new_uniques.append(formatted_val)
 
-            color_ramp = QgsGradientColorRamp(
-                QColor(255, 255, 255, 160), QColor(0, 0, 255, 160)
-            )
+        if len(new_uniques) == 0:
+            # this shouldnt hit, should always have at least one None in list
+            continue
+        try:
+            unique_max = max(new_uniques)
+        except ValueError:
+            continue
+        try:
+            unique_min = min(new_uniques)
+        except ValueError:
+            continue
 
-            renderer = QgsCategorizedSymbolRenderer(field_name)
-            cur_layer.startEditing()
-            for value in new_uniques:
-                symbol = QgsSymbol.defaultSymbol(cur_layer.geometryType())
-                symbol_layer = symbol.symbolLayer(0)
-                translated_val = translate(value, unique_min, unique_max, 0, 1)
-                symbol_layer.setColor(color_ramp.color(translated_val))
-                category = QgsRendererCategory(value, symbol, str(value))
-                renderer.addCategory(category)
-            cur_layer.setRenderer(renderer)
-            cur_layer.commitChanges()
+        color_ramp = QgsGradientColorRamp(
+            QColor(255, 255, 255, 160), QColor(0, 0, 255, 160)
+        )
+
+        renderer = QgsCategorizedSymbolRenderer(field_name)
+        demo_layer.startEditing()
+        for value in new_uniques:
+            symbol = QgsSymbol.defaultSymbol(demo_layer.geometryType())
+            symbol_layer = symbol.symbolLayer(0)
+            translated_val = translate(value, unique_min, unique_max, 0, 1)
+            symbol_layer.setColor(color_ramp.color(translated_val))
+            category = QgsRendererCategory(value, symbol, str(value))
+            renderer.addCategory(category)
+        demo_layer.setRenderer(renderer)
+        demo_layer.commitChanges()
+
+    doc = QDomDocument()
+    read_write_context = QgsReadWriteContext()
+    demo_layer.exportNamedStyle(doc, read_write_context)
+    error = save_census_data_gpkg(demo_layer)
+
+    if error == QgsVectorFileWriter.WriterError.NoError:
+        demo_layer_path = f"{CENSUS_DATA_GPKG_OUTPUT}|layername={demo_layer.name()}"
+        new_layer = QgsVectorLayer(demo_layer_path, f"{demo_layer.name()}", "ogr")
+        new_layer.importNamedStyle(doc)
+        new_layer.saveStyleToDatabase(
+            new_layer.name(), f"{new_layer.name()} style", True, ""
+        )
+        logging.info(f"{new_layer.isValid() = } for {demo_layer.name()}")
+        return new_layer
+    else:
+        logging.error(f"Encountered error {error} when writing {demo_layer.name()}")
+        return demo_layer
+
+
+# def color_demo_layers(
+#     table_attributes: list[str], table_layers: list[QgsVectorLayer]
+# ) -> None:
+#     """Modifies vector layer list elements to have a graduated color scheme based on their attributes
+
+#     Args:
+#         table_attributes (list[str]): _description_
+#         table_layers (list[QgsVectorLayer]): _description_
+
+#     Returns:
+#         list[QgsVectorLayer]: _description_
+#     """
+#     for cur_layer in table_layers:
+#         for field_name in cur_layer.fields().names():
+#             if field_name not in table_attributes:
+#                 continue
+#             unique_values = cur_layer.uniqueValues(
+#                 cur_layer.fields().indexOf(field_name)
+#             )
+#             new_uniques = []
+#             for variant in unique_values:
+#                 if isinstance(variant, QVariant):
+#                     try:
+#                         if variant.isNull():
+#                             continue
+#                         else:
+#                             raise AttributeError
+#                     except AttributeError:
+#                         logging.info(f"{type(variant) = }, {variant = }")
+#                         exit()
+#                 elif variant is None:
+#                     continue
+#                 else:
+#                     formatted_val = float(variant)
+#                 if formatted_val < 0.0:
+#                     continue
+#                 new_uniques.append(formatted_val)
+
+#             if len(new_uniques) == 0:
+#                 # this shouldnt hit, should always have at least one None in list
+#                 continue
+#             try:
+#                 unique_max = max(new_uniques)
+#             except ValueError:
+#                 continue
+#             try:
+#                 unique_min = min(new_uniques)
+#             except ValueError:
+#                 continue
+
+#             color_ramp = QgsGradientColorRamp(
+#                 QColor(255, 255, 255, 160), QColor(0, 0, 255, 160)
+#             )
+
+#             renderer = QgsCategorizedSymbolRenderer(field_name)
+#             cur_layer.startEditing()
+#             for value in new_uniques:
+#                 symbol = QgsSymbol.defaultSymbol(cur_layer.geometryType())
+#                 symbol_layer = symbol.symbolLayer(0)
+#                 translated_val = translate(value, unique_min, unique_max, 0, 1)
+#                 symbol_layer.setColor(color_ramp.color(translated_val))
+#                 category = QgsRendererCategory(value, symbol, str(value))
+#                 renderer.addCategory(category)
+#             cur_layer.setRenderer(renderer)
+#             cur_layer.commitChanges()
 
 
 def chunked(it, size):
@@ -687,10 +782,11 @@ def chunked(it, size):
 
 
 # Creates heatmap layers for csvs that are grouped in twos
-def demographics_groups(
+def create_styled_demographics_group_layers(
     range_type: int,
     base_layer: QgsVectorLayer,
     attr_name: str,
+    table_attributes_list: list,
     table_allow_list: list,
     zip_data_dict: dict[str, dict[str, str]],
 ) -> QgsVectorLayer:
@@ -773,7 +869,10 @@ def demographics_groups(
         demo_layer.commitChanges()
 
     demo_layer.updateExtents()  # because we change the size?
-    return demo_layer
+
+    # style
+    new_layer = get_styled_demo_layer(table_attributes_list, demo_layer)
+    return new_layer
 
 
 # Used to map a value from one scale to another scale
@@ -836,6 +935,9 @@ for i, table_layer_list in enumerate(demo_groups):
         tree_layer.setItemVisibilityChecked(False)
         sub_group.insertChildNode(j, tree_layer)
     demo_tree_group.insertChildNode(i, sub_group)
+
+heatmap_tree_group.setExpanded(False)
+demo_tree_group.setExpanded(False)
 
 project.addMapLayer(location_layer)
 logging.debug("Last one")
