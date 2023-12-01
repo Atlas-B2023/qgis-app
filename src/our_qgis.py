@@ -28,23 +28,19 @@ from sys import exit
 
 # Keep in mind that this program will be running with python 3.9
 
-# qgis = importlib.util.spec_from_file_location("qgis", "C:\Program Files\QGIS 3.34.0\apps\qgis\python\qgis")
+CODE_PROJECT_DIRECTORY = Path(__file__).parent.parent
+CODE_PARENT_DIRECTORY = CODE_PROJECT_DIRECTORY.parent
+# change to name of folder of where saved project is
+QGIS_PROJECT_FILE_DIRECTORY = CODE_PARENT_DIRECTORY / "current_qgis_map"
 
-# Grab the directory of the qgis project and parent folder of the project
-#! this should be a sibling folder to the two repository folders
-PROJECT_DIRECTORY = Path(__file__).parent.parent
-PARENT_DIRECTORY = PROJECT_DIRECTORY.parent
-QGIS_PROJECT_FILE_DIRECTORY = PARENT_DIRECTORY / "current_qgis_map"
-# new_current_gis_map
-
-# recurse
+# recurse in this directory to get all metros
 METRO_DIRECTORY = (
     Path(__file__).parent.parent.parent
     / "ResidentialElectrificationTracker"
     / "output"
     / "metro_data"
 )
-# do not recurse
+# do not recurse in this directory as other data is stored in sub folders
 CENSUS_DIRECTORY = (
     Path(__file__).parent.parent.parent
     / "ResidentialElectrificationTracker"
@@ -55,68 +51,69 @@ CENSUS_DIRECTORY = (
 LOCATION_HEATMAP_GPKG_OUTPUT = QGIS_PROJECT_FILE_DIRECTORY / "location_heatmap.gpkg"
 CENSUS_DATA_GPKG_OUTPUT = QGIS_PROJECT_FILE_DIRECTORY / "census_data.gpkg"
 
-# these allow lists are for initial filtering
+# Attributes are what you want the layer to color with. allow list is ZCTA and the accompanying columns to the attributes
+#! TODO make sure these are ordered the way they appear in the csv file
 DP05_ALLOW_LIST = [
-    "PCTTotalHousingUnits",
-    "PCTSexAndAgeTPOP",
-    "PCTSexAndAgeTPOPMedianAge(years)",
-    "PCTSexAndAgeTPOPUnder18Years",
-    "PCTSexAndAgeTPOP16Yearsplus",
-    "PCTSexAndAgeTPOP18Yearsplus",
-    "PCTSexAndAgeTPOP21Yearsplus",
-    "PCTSexAndAgeTPOP62Yearsplus",
-    "PCTSexAndAgeTPOP65Yearsplus",
-    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_W_",
-    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_B_",
-    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_A_",
-    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_S_",
-    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_P_",
-    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_O_",
-    "MOETotalHousingUnits",
-    "MOESexAndAgeTPOP",
-    "MOESexAndAgeTPOPMedianAge(years)",
-    "MOESexAndAgeTPOPUnder18Years",
-    "MOESexAndAgeTPOP16Yearsplus",
-    "MOESexAndAgeTPOP18Yearsplus",
-    "MOESexAndAgeTPOP21Yearsplus",
-    "MOESexAndAgeTPOP62Yearsplus",
-    "MOESexAndAgeTPOP65Yearsplus",
-    "MOERaceAloneOrInCombinationWith1plusOtherRacesTPOP_W_",
-    "MOERaceAloneOrInCombinationWith1plusOtherRacesTPOP_B_",
-    "MOERaceAloneOrInCombinationWith1plusOtherRacesTPOP_A_",
-    "MOERaceAloneOrInCombinationWith1plusOtherRacesTPOP_S_",
-    "MOERaceAloneOrInCombinationWith1plusOtherRacesTPOP_P_",
-    "MOERaceAloneOrInCombinationWith1plusOtherRacesTPOP_O_",
-    "ESTTotalHousingUnits",
     "ESTSexAndAgeTPOP",
-    "ESTSexAndAgeTPOPMedianAge(years)",
-    "ESTSexAndAgeTPOPUnder18Years",
-    "ESTSexAndAgeTPOP16Yearsplus",
-    "ESTSexAndAgeTPOP18Yearsplus",
-    "ESTSexAndAgeTPOP21Yearsplus",
-    "ESTSexAndAgeTPOP62Yearsplus",
-    "ESTSexAndAgeTPOP65Yearsplus",
-    "ESTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_W_",
-    "ESTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_B_",
-    "ESTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_A_",
-    "ESTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_S_",
-    "ESTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_P_",
-    "ESTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_O_",
-    "PMETotalHousingUnits",
+    "MOESexAndAgeTPOP",
+    "PCTSexAndAgeTPOP",
     "PMESexAndAgeTPOP",
+    "ESTSexAndAgeTPOPMedianAge(years)",
+    "MOESexAndAgeTPOPMedianAge(years)",
+    "PCTSexAndAgeTPOPMedianAge(years)",
     "PMESexAndAgeTPOPMedianAge(years)",
+    "ESTSexAndAgeTPOPUnder18Years",
+    "MOESexAndAgeTPOPUnder18Years",
+    "PCTSexAndAgeTPOPUnder18Years",
     "PMESexAndAgeTPOPUnder18Years",
+    "ESTSexAndAgeTPOP16Yearsplus",
+    "MOESexAndAgeTPOP16Yearsplus",
+    "PCTSexAndAgeTPOP16Yearsplus",
     "PMESexAndAgeTPOP16Yearsplus",
+    "ESTSexAndAgeTPOP18Yearsplus",
+    "MOESexAndAgeTPOP18Yearsplus",
+    "PCTSexAndAgeTPOP18Yearsplus",
     "PMESexAndAgeTPOP18Yearsplus",
+    "ESTSexAndAgeTPOP21Yearsplus",
+    "MOESexAndAgeTPOP21Yearsplus",
+    "PCTSexAndAgeTPOP21Yearsplus",
     "PMESexAndAgeTPOP21Yearsplus",
+    "ESTSexAndAgeTPOP62Yearsplus",
+    "MOESexAndAgeTPOP62Yearsplus",
+    "PCTSexAndAgeTPOP62Yearsplus",
     "PMESexAndAgeTPOP62Yearsplus",
+    "ESTSexAndAgeTPOP65Yearsplus",
+    "MOESexAndAgeTPOP65Yearsplus",
+    "PCTSexAndAgeTPOP65Yearsplus",
     "PMESexAndAgeTPOP65Yearsplus",
+    "ESTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_W_",
+    "MOERaceAloneOrInCombinationWith1plusOtherRacesTPOP_W_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_W_",
     "PMERaceAloneOrInCombinationWith1plusOtherRacesTPOP_W_",
+    "ESTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_B_",
+    "MOERaceAloneOrInCombinationWith1plusOtherRacesTPOP_B_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_B_",
     "PMERaceAloneOrInCombinationWith1plusOtherRacesTPOP_B_",
+    "ESTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_A_",
+    "MOERaceAloneOrInCombinationWith1plusOtherRacesTPOP_A_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_A_",
     "PMERaceAloneOrInCombinationWith1plusOtherRacesTPOP_A_",
+    "ESTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_S_",
+    "MOERaceAloneOrInCombinationWith1plusOtherRacesTPOP_S_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_S_",
     "PMERaceAloneOrInCombinationWith1plusOtherRacesTPOP_S_",
+    "ESTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_P_",
+    "MOERaceAloneOrInCombinationWith1plusOtherRacesTPOP_P_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_P_",
     "PMERaceAloneOrInCombinationWith1plusOtherRacesTPOP_P_",
+    "ESTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_O_",
+    "MOERaceAloneOrInCombinationWith1plusOtherRacesTPOP_O_",
+    "PCTRaceAloneOrInCombinationWith1plusOtherRacesTPOP_O_",
     "PMERaceAloneOrInCombinationWith1plusOtherRacesTPOP_O_",
+    "ESTTotalHousingUnits",
+    "MOETotalHousingUnits",
+    "PCTTotalHousingUnits",
+    "PMETotalHousingUnits",
     "ZCTA",
 ]
 
@@ -139,22 +136,22 @@ DP05_ATTRIBUTES = [
 ]
 
 S1501_ALLOW_LIST = [
-    "ESTPCTAgeByEduAttainPop25YearsplusHighSchoolGraduate(includesEquivalency)",
-    "ESTPCTAgeByEduAttainPop25YearsplusBachelorsDegreeOrHigher",
     "ESTPCTAgeByEduAttainPop18To24YearsHighSchoolGraduate(includesEquivalency)",
-    "ESTPCTAgeByEduAttainPop18To24YearsBachelorsDegreeOrHigher",
-    "MOEPCTAgeByEduAttainPop25YearsplusHighSchoolGraduate(includesEquivalency)",
-    "MOEPCTAgeByEduAttainPop25YearsplusBachelorsDegreeOrHigher",
     "MOEPCTAgeByEduAttainPop18To24YearsHighSchoolGraduate(includesEquivalency)",
+    "ESTPCTAgeByEduAttainPop18To24YearsBachelorsDegreeOrHigher",
     "MOEPCTAgeByEduAttainPop18To24YearsBachelorsDegreeOrHigher",
+    "ESTPCTAgeByEduAttainPop25YearsplusHighSchoolGraduate(includesEquivalency)",
+    "MOEPCTAgeByEduAttainPop25YearsplusHighSchoolGraduate(includesEquivalency)",
+    "ESTPCTAgeByEduAttainPop25YearsplusBachelorsDegreeOrHigher",
+    "MOEPCTAgeByEduAttainPop25YearsplusBachelorsDegreeOrHigher",
     "ZCTA",
 ]
 
 S1501_ATTRIBUTES = [
-    "ESTPCTAgeByEduAttainPop25YearsplusHighSchoolGraduate(includesEquivalency)",
-    "ESTPCTAgeByEduAttainPop25YearsplusBachelorsDegreeOrHigher",
     "ESTPCTAgeByEduAttainPop18To24YearsHighSchoolGraduate(includesEquivalency)",
     "ESTPCTAgeByEduAttainPop18To24YearsBachelorsDegreeOrHigher",
+    "ESTPCTAgeByEduAttainPop25YearsplusHighSchoolGraduate(includesEquivalency)",
+    "ESTPCTAgeByEduAttainPop25YearsplusBachelorsDegreeOrHigher",
 ]
 
 S1901_ALLOW_LIST = [
@@ -203,19 +200,12 @@ S1901_ATTRIBUTES = [
     "ESTHouseholdsMeanIncome(dollars)",
 ]
 # Set up project log file
-log_file_path = PARENT_DIRECTORY / "qgisdebug.log"
+LOG_FILE_PATH = CODE_PARENT_DIRECTORY / "qgisdebug.log"
 logging.basicConfig(
-    filename=log_file_path,
+    filename=LOG_FILE_PATH,
     level=logging.DEBUG,
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
-
-# Attempt to retrieve the path to the qgis-app and layers folders
-scriptDirectory = PARENT_DIRECTORY / "qgis-app"
-folderDirectory = scriptDirectory / "layers"
-
-if not scriptDirectory.exists() or not folderDirectory.exists():
-    logging.warning("qgis-app (repository) or layers (sub folder) does not exist")
 
 # Initialize QGIS
 QgsApplication.setPrefixPath("~/QGIS 3.34.0", True)
@@ -274,6 +264,7 @@ def read_housing_data_and_create_temp_location_points_layer(
         headers,
         list(itertools.dropwhile(lambda x: x != "Electricity", headers)),
     )
+
 
 # Used to create a point layer from csv data
 def create_locations_layer_from_csv(
@@ -514,14 +505,9 @@ def load_filtered_data_from_demo_file(
                 row["ZCTA"]: {attr: row[attr] for attr in S1501_ALLOW_LIST}
                 for row in csv_reader
             }
-        range_type = 4
+        range_type = 2
 
     elif "S1901" in file_path.stem:
-        # filtered_headers = [
-        #     attribute
-        #     for attribute in cleaned_csv_headers cleaned headers is a param. read and get file headers in caller
-        #     if attribute in S1901_ALLOW_LIST
-        # ]
         with open(file_path, encoding="utf-8") as csv_file:
             csv_reader = csv.DictReader(csv_file)
             zip_data_dict = {
@@ -543,9 +529,11 @@ def load_filtered_data_from_demo_file(
 
 
 # Used to create heatmap layers from csv demographic data
-def create_demographic_layers(file_path: Path) -> typing.Union[list[tuple[str, list[QgsVectorLayer]]], None]:
+def create_demographic_layers(
+    file_path: Path
+) -> typing.Union[list[tuple[str, list[QgsVectorLayer]]], None]:
     # (table_name, layers)
-    demo_layers:list[tuple[str,list[QgsVectorLayer]]] = []
+    demo_layers: list[tuple[str, list[QgsVectorLayer]]] = []
     # doc = QDomDocument()
     # read_write_context = QgsReadWriteContext()
     possible_layers = project.mapLayersByName("BaseLayerDB — Zips_in_Metros")
@@ -568,25 +556,29 @@ def create_demographic_layers(file_path: Path) -> typing.Union[list[tuple[str, l
     assert range_type is not None
     if range_type == 2:
         if "S1901" in file_path.stem:
-            s1901_layers:list[QgsVectorLayer] = []
+            s1901_layers: list[QgsVectorLayer] = []
             for attribute in S1901_ATTRIBUTES:
-                logging.info(f"{attribute =}")
-                s1901_layers.append(demographics_groups_of_two(
-                    base_layer, attribute, S1901_ALLOW_LIST, zip_data_dict
-                ))
-            assert len(s1901_layers) > 0 
-            demo_layers.append(("S1901", s1901_layers)) # type: ignore
+                logging.info(f"Making layer for {attribute =}")
+                s1901_layers.append(
+                    demographics_groups_of_two(
+                        base_layer, attribute, S1901_ALLOW_LIST, zip_data_dict
+                    )
+                )
+            assert len(s1901_layers) > 0
+            demo_layers.append(("S1901", s1901_layers))  # type: ignore
+        if "S1501" in file_path.stem:
+            s1501_layers: list[QgsVectorLayer] = []
+            for attribute in S1501_ATTRIBUTES:
+                logging.info(f"Making layer for {attribute =}")
+                s1501_layers.append(
+                    demographics_groups_of_two(
+                        base_layer, attribute, S1501_ALLOW_LIST, zip_data_dict
+                    )
+                )
+            assert len(s1501_layers) > 0
+            demo_layers.append(("S1901", s1501_layers))  # type: ignore
     elif range_type == 4:
         return None
-        # if "S1501" in file_path.stem:
-        #     s1501_layers:list[QgsVectorLayer] = []
-        #     for attribute in S1501_ATTRIBUTES:
-        #         logging.info(f"{attribute =}")
-        #         s1501_layers.append(demographics_groups_of_four(
-        #             base_layer, attribute, S1501_ALLOW_LIST, zip_data_dict
-        #         ))
-        #     assert len(s1501_layers) > 0 
-        #     demo_layers.append(tuple("S1901", s1901_layers)) # type: ignore
         # if "DP05" in file_path.stem:
         #     dp05_layers:list[QgsVectorLayer] = []
         #     for attribute in S1501_ATTRIBUTES:
@@ -594,12 +586,11 @@ def create_demographic_layers(file_path: Path) -> typing.Union[list[tuple[str, l
         #         dp05_layers.append(demographics_groups_of_four(
         #             base_layer, attribute, DP05_ALLOW_LIST, zip_data_dict
         #         ))
-        #     assert len(dp05_layers) > 0 
+        #     assert len(dp05_layers) > 0
         #     demo_layers.append(tuple("S1901", s1901_layers)) # type: ignore
     else:
         logging.warning("could not recognize file format.")
         return None
-    
 
     # # csv_groups = QgsLayerTreeGroup(f"{file_path.stem}")
 
@@ -802,7 +793,7 @@ def demographics_groups_of_two(
         target_zip_code: str = feature.attributes()[target_zip_code_field_index]
         target_zip_code_data_dict = zip_data_dict.get(target_zip_code, "")
         if isinstance(target_zip_code_data_dict, str):
-            #theres a lot of these, so try not to enable
+            # theres a lot of these, so try not to enable
             # logging.warning(f"Could not find zip code dict entry for {target_zip_code}!")
             continue
         # the census_column_dict relies on the fact that desired_census_columns have been added as data provider attributes (fields) to the layer
@@ -826,9 +817,7 @@ def demographics_groups_of_two(
     error = save_census_data_gpkg(demo_layer)
 
     if error == QgsVectorFileWriter.WriterError.NoError:
-        demo_layer_path = (
-            f"{CENSUS_DATA_GPKG_OUTPUT}|layername={demo_layer.name()}"
-        )
+        demo_layer_path = f"{CENSUS_DATA_GPKG_OUTPUT}|layername={demo_layer.name()}"
         demo_layer = QgsVectorLayer(
             demo_layer_path, f"Census-{demo_layer.name()}", "ogr"
         )
@@ -837,9 +826,7 @@ def demographics_groups_of_two(
             demo_layer.name(), f"{demo_layer.name()} style", True, ""
         )
     else:
-        logging.error(
-            f"Encountered error {error} when writing {demo_layer.name()}"
-        )
+        logging.error(f"Encountered error {error} when writing {demo_layer.name()}")
     return demo_layer
 
 
@@ -921,7 +908,7 @@ def translate(value, fromMin, fromMax, toMin, toMax):
     return toMin + (valueScaled * toSpan)
 
 
-def read_demographic_data(directory: Path) -> list[tuple[str,list[QgsVectorLayer]]]:
+def read_demographic_data(directory: Path) -> list[tuple[str, list[QgsVectorLayer]]]:
     """Read the census directory and create a list of vector layers for each filtered field in each file found in the dir.
 
     Args:
@@ -930,10 +917,11 @@ def read_demographic_data(directory: Path) -> list[tuple[str,list[QgsVectorLayer
     Returns:
         typing.List[typing.List[QgsVectorLayer]]: list of lists, grouped by filename
     """
-    demo_groups: list[tuple[str,list[QgsVectorLayer]]] = []
+    demo_groups: list[tuple[str, list[QgsVectorLayer]]] = []
 
     # All files in the other folders, in the layers folder, will be processed individually
     for file_path in directory.glob("*.csv"):
+        logging.info(f"Found census table : {file_path.stem}")
         layers_for_file = create_demographic_layers(file_path)
         if layers_for_file is None:
             continue
@@ -952,7 +940,7 @@ def read_shape_file(directory: Path):
             logging.warning("Layer " + file_path.stem + " failed to load!")
 
 
-# Create layer groups for heating information and demographic information
+# Create layer groups cant be "saved" to gpkg. to keep the layering, the project must be saved.
 # heatmap_layer_tree_group = QgsLayerTreeGroup("Heating Types")
 # demographic_layers = QgsLayerTreeGroup("Demographic Info")
 
@@ -964,23 +952,22 @@ def read_shape_file(directory: Path):
 ) = read_housing_data_and_create_temp_location_points_layer(METRO_DIRECTORY)
 location_layer = create_locations_layer_from_csv(csv_contents, csv_headers, csv_layer)
 heatmap_layers = create_heatmap_layers(location_layer.dataProvider(), csv_attributes)
-# logging.info(f"{time.time() = }")
-demo_groups = read_demographic_data(CENSUS_DIRECTORY)
-# logging.info(f"{time.time() = }")
 
-# add all layers to global LAYERS = [], and for each LAYER in LAYERS, project.addmaplayer(layer,...)
 project.addMapLayer(location_layer)
 
 # Have to rearrange before saving
 heatmap_group = layer_tree_root.addGroup("Heating Types")
 assert isinstance(heatmap_group, QgsLayerTreeGroup)
-for index, placed_layer in enumerate(heatmap_layers):
-    project.addMapLayer(heatmap_layers[index], False)
-    heatmap_group.addLayer(heatmap_layers[index])
+for placed_layer in heatmap_layers:
+    project.addMapLayer(placed_layer)
+    heatmap_group.addLayer(placed_layer)
+    project.layerTreeRoot().findLayer(placed_layer.id()).setItemVisibilityChecked(False)
 
+demo_groups = read_demographic_data(CENSUS_DIRECTORY)
 for table_layer_list in demo_groups:
     for layer in table_layer_list[1]:
         project.addMapLayer(layer)
+        project.layerTreeRoot().findLayer(layer.id()).setItemVisibilityChecked(False)
 # Have to rearrange before saving
 # demo_group = layer_tree_root.addGroup("Demographic Data")
 # assert isinstance(demo_group, QgsLayerTreeGroup)
