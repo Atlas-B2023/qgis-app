@@ -15,6 +15,9 @@ from qgis.core import (
     QgsField,
     QgsCoordinateReferenceSystem,
     QgsReadWriteContext,
+    QgsCategorizedSymbolRenderer,
+    QgsSymbol,
+    QgsRendererCategory,
 )
 from PyQt5.QtCore import QVariant
 from qgis.PyQt.QtGui import QColor
@@ -225,7 +228,7 @@ project.read()
 layer_tree_root = project.instance().layerTreeRoot()
 
 # Load all layers
-demo_layers = []
+# demo_layers = []
 
 
 # Read all files in the directory stated and create layers accordingly
@@ -533,7 +536,6 @@ def create_demographic_layers(
     file_path: Path
 ) -> typing.Union[list[QgsVectorLayer], None]:
     # (table_name, layers)
-    demo_layers: list[QgsVectorLayer] = []
     # doc = QDomDocument()
     # read_write_context = QgsReadWriteContext()
     possible_layers = project.mapLayersByName("BaseLayerDB — Zips_in_Metros")
@@ -559,126 +561,139 @@ def create_demographic_layers(
         logging.warning("could not recognize file format.")
         return None
 
+    demo_layers: list[QgsVectorLayer] = []
     if "S1901" in file_path.stem:
+        # testing
+        first = True
         for attribute in S1901_ATTRIBUTES:
+            if not first:
+                break
+            first = False
             logging.info(f"Making layer for {attribute =}")
             demo_layers.append(
                 demographics_groups(
-                    2, base_layer, attribute, S1901_ALLOW_LIST, zip_data_dict
+                    range_type, base_layer, attribute, S1901_ALLOW_LIST, zip_data_dict
                 )
             )
         assert len(demo_layers) > 0
+        color_demo_layer(S1901_ATTRIBUTES, demo_layers)
     if "S1501" in file_path.stem:
+        first = True
         for attribute in S1501_ATTRIBUTES:
+            if not first:
+                break
+            first = False
             logging.info(f"Making layer for {attribute =}")
             demo_layers.append(
                 demographics_groups(
-                    2, base_layer, attribute, S1501_ALLOW_LIST, zip_data_dict
+                    range_type, base_layer, attribute, S1501_ALLOW_LIST, zip_data_dict
                 )
             )
         assert len(demo_layers) > 0
+        color_demo_layer(S1501_ATTRIBUTES, demo_layers)
     if "DP05" in file_path.stem:
+        first = True
         for attribute in DP05_ATTRIBUTES:
-            logging.info(f"Making layer for {attribute =}")
+            if not first:
+                break
+            first = False
+            logging.info(f"Making layer for {attribute =} with range {range_type}")
             demo_layers.append(
                 demographics_groups(
-                    4, base_layer, attribute, DP05_ALLOW_LIST, zip_data_dict
-                )
+                    range_type, base_layer, attribute, DP05_ALLOW_LIST, zip_data_dict
+                ),
             )
         assert len(demo_layers) > 0
+        color_demo_layer(DP05_ATTRIBUTES, demo_layers)
 
-    # # csv_groups = QgsLayerTreeGroup(f"{file_path.stem}")
+    return demo_layers
 
-    # # Create a layer for each attribute in heating_attributes
-    # for index, attribute_name in enumerate(csv_headers):
-    #     # Determines how the headers should be grouped (DP05 in groups of 4, S1901 in groups of 2, etc.)
-    #     # If reading a csv with a new format, copy one if statement and be sure to modify the values in range()
-    #     # Csvs with groups larger than 4 will need to be modified further, by modifying the values in:
-    #     # demo_layer.deleteAttributes(), new_feat.resizeAttributes(), and new_feat.setAttribute()
-    #     if (
-    #         "S1501" in file_path.stem
-    #         and attribute_name in S1501_ALLOW_LIST
-    #         and "PCT" in attribute_name
-    #     ):
-    #         demo_layer = demographics_groups_of_four(
-    #             csv_headers, attribute_name, base_layer, data, index
-    #         )
-    #     elif (
-    #         "S1901" in file_path.stem
-    #         and "famil" not in attribute_name.lower()
-    #         and "EST" in attribute_name
-    #     ):
-    #         demo_layer = demographics_groups_of_two(
-    #             csv_headers, attribute_name, base_layer, data, index
-    #         )
-    #     elif (
-    #         "DP05" in file_path.stem
-    #         and attribute_name in DP05_ALLOW_LIST
-    #         and "PCT" in attribute_name
-    #     ):
-    #         demo_layer = demographics_groups_of_four(
-    #             csv_headers, attribute_name, base_layer, data, index
-    #         )
-    #     else:
-    #         continue
 
-    #     # Colors the zip codes per the selected attribute's value
-    #     unique_values = demo_layer.uniqueValues(
-    #         demo_layer.fields().indexOf(attribute_name)
+def color_demo_layer(
+    table_attributes: list[str], table_layers: list[QgsVectorLayer]
+) -> None:
+    """Modifies vector layer list elements to have a graduated color scheme based on their attributes
+
+    Args:
+        table_attributes (list[str]): _description_
+        table_layers (list[QgsVectorLayer]): _description_
+
+    Returns:
+        list[QgsVectorLayer]: _description_
+    """
+    # TODO layer should have fields ZCTA, Attr, and supporting attrs
+    for cur_layer in table_layers:
+        for field_name in cur_layer.fields().names():
+            if field_name not in table_attributes:
+                continue
+            unique_values = cur_layer.uniqueValues(
+                cur_layer.fields().indexOf(field_name)
+            )
+            new_uniques = []
+            for variant in unique_values:
+                if isinstance(variant, QVariant):
+                    try:
+                        if variant.isNull():
+                            continue
+                        else:
+                            raise AttributeError
+                    except AttributeError:
+                        logging.info(f"{type(variant) = }, {variant = }")
+                        exit()
+                else:
+                    formatted_val = float(variant)
+                if formatted_val < 0.0:
+                    continue
+                new_uniques.append(formatted_val)
+
+            if len(new_uniques) == 0:
+                # this shouldnt hit, should always have at least one None in list
+                continue
+            try:
+                unique_max = max(new_uniques)
+            except ValueError:
+                continue
+            try:
+                unique_min = min(new_uniques)
+            except ValueError:
+                continue
+
+            color_ramp = QgsGradientColorRamp(
+                QColor(255, 255, 255, 160), QColor(0, 0, 255, 160)
+            )
+
+            renderer = QgsCategorizedSymbolRenderer(field_name)
+            cur_layer.startEditing()
+            logging.info(f"{len(new_uniques) = }")
+            for value in new_uniques:
+                symbol = QgsSymbol.defaultSymbol(cur_layer.geometryType())
+                symbol_layer = symbol.symbolLayer(0)
+                translated_val = translate(value, unique_min, unique_max, 0, 1)
+                symbol_layer.setColor(color_ramp.color(translated_val))
+                category = QgsRendererCategory(value, symbol, str(value))
+                renderer.addCategory(category)
+            cur_layer.setRenderer(renderer)
+            cur_layer.commitChanges()
+    # error = QgsVectorFileWriter.writeAsVectorFormat(
+    #     demo_layer,
+    #     str(CENSUS_DATA_GPKG_OUTPUT / f"Demo-{attribute_name}.gpkg"),
+    #     "UTF-8",
+    #     demo_layer.crs(),
+    #     "GPKG",
+    # )
+    # if error[0] == QgsVectorFileWriter.WriterError.NoError:
+    #     shape_file_vector = QgsVectorLayer(
+    #         str(CENSUS_DATA_GPKG_OUTPUT / f"Demo-{attribute_name}.gpkg"),
+    #         f"{attribute_name}.gpkg",
+    #         "ogr",
     #     )
-    #     new_uniques = []
-    #     for value in unique_values:
-    #         if value is not None:
-    #             try:
-    #                 formatted_val = float(value)
-    #             except ValueError:
-    #                 continue
-    #             if formatted_val < 0.0:
-    #                 continue
-    #             else:
-    #                 new_uniques.append(formatted_val)
-    #     if len(new_uniques) == 0:
-    #         continue
-    #     try:
-    #         unique_max = max(new_uniques)
-    #     except ValueError:
-    #         logging.warning(f"failed max: {unique_values = }, {attribute_name = }")
-    #     try:
-    #         unique_min = min(new_uniques)
-    #     except ValueError:
-    #         logging.warning(f"failed min: {unique_values = }, {attribute_name = }")
-    #     color_ramp = QgsGradientColorRamp(
-    #         QColor(255, 255, 255, 160), QColor(0, 0, 255, 160)
-    #     )
-
-    #     renderer = QgsCategorizedSymbolRenderer(attribute_name)
-    #     for value in new_uniques:
-    #         symbol = QgsSymbol.defaultSymbol(demo_layer.geometryType())
-    #         layer = symbol.symbolLayer(0)
-    #         translated_val = translate(value, unique_min, unique_max, 0, 1)
-    #         layer.setColor(color_ramp.color(translated_val))
-    #         category = QgsRendererCategory(value, symbol, str(value))
-    #         renderer.addCategory(category)
-    #     # error = QgsVectorFileWriter.writeAsVectorFormat(
-    #     #     demo_layer,
-    #     #     str(CENSUS_DATA_GPKG_OUTPUT / f"Demo-{attribute_name}.gpkg"),
-    #     #     "UTF-8",
-    #     #     demo_layer.crs(),
-    #     #     "GPKG",
-    #     # )
-    #     # if error[0] == QgsVectorFileWriter.WriterError.NoError:
-    #     #     shape_file_vector = QgsVectorLayer(
-    #     #         str(CENSUS_DATA_GPKG_OUTPUT / f"Demo-{attribute_name}.gpkg"),
-    #     #         f"{attribute_name}.gpkg",
-    #     #         "ogr",
-    #     #     )
-    #     #     logging.info(f"Demo-{attribute_name}.gpkg file saved")
-    #     #     # for some reason the writer doesnt save the crs info
-    #     #     shape_file_vector.setCrs(demo_layer.crs())
-    #     #     # mutate var so that its now pointing to the
-    #     #     demo_layer = shape_file_vector
-    #     # else:
-    #     #     logging.info(f"Could not save Demo-{attribute_name}.gpkg")
+    #     logging.info(f"Demo-{attribute_name}.gpkg file saved")
+    #     # for some reason the writer doesnt save the crs info
+    #     shape_file_vector.setCrs(demo_layer.crs())
+    #     # mutate var so that its now pointing to the
+    #     demo_layer = shape_file_vector
+    # else:
+    #     logging.info(f"Could not save Demo-{attribute_name}.gpkg")
     #     demo_layer.setRenderer(renderer)
 
     #     demo_layer.exportNamedStyle(doc, read_write_context)
@@ -710,8 +725,6 @@ def create_demographic_layers(
     #     # if index == 6:
     #     #     logging.info(index)
     #     #     break
-    # demo_layers.append(demo_layer)  # do not keep this
-    return demo_layers
 
 
 def chunked(it, size):
@@ -748,18 +761,23 @@ def demographics_groups(
     # copy base layer information to our demographic layer
     demo_layer.startEditing()
     demo_prov = demo_layer.dataProvider()
-    demo_prov.addAttributes(base_layer.fields().toList())
-    demo_layer.triggerRepaint()
+    demo_prov.addAttributes(
+        [QgsField("ZCTA5", QVariant.Type.String)]
+    )
+    demo_layer.updateFields()
+    logging.info(f"{demo_layer.fields().names() = },{demo_layer.fields().toList() = }")
     demo_layer.commitChanges()
 
     # runs about 39k times per layer. see if can combine with other. also only copy zcta attr
 
     for old_feature in base_layer.getFeatures():
-        new_feature = QgsFeature()
-        new_feature.setGeometry(old_feature.geometry())
-        new_feature.setAttributes(old_feature.attributes())
+        new_zcta5_feature = QgsFeature()
+        new_zcta5_feature.setFields(demo_layer.fields())
+        # set feature to possible features
+        new_zcta5_feature.setGeometry(old_feature.geometry())
+        new_zcta5_feature.setAttribute("ZCTA5", old_feature.attributes()[old_feature.fieldNameIndex("ZCTA5")])
         demo_layer.startEditing()
-        demo_layer.addFeature(new_feature)
+        demo_layer.addFeature(new_zcta5_feature)
         demo_layer.commitChanges()
 
     demo_layer.startEditing()
@@ -857,16 +875,6 @@ def read_demographic_data(directory: Path) -> list[tuple[str, list[QgsVectorLaye
 
     assert len(demo_groups) > 0
     return demo_groups
-
-
-def read_shape_file(directory: Path):
-    for file_path in directory.glob("*.shp"):
-        layer = QgsVectorLayer(str(file_path), file_path.stem, "ogr")
-        try:
-            demo_layers.append(layer)
-            project.instance().addMapLayer(layer)
-        except Exception:
-            logging.warning("Layer " + file_path.stem + " failed to load!")
 
 
 # Create layer groups cant be "saved" to gpkg. to keep the layering, the project must be saved.
