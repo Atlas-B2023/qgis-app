@@ -17,7 +17,7 @@ from qgis.core import (
     QgsCategorizedSymbolRenderer,
     QgsSymbol,
     QgsRendererCategory,
-    QgsLayerTreeLayer
+    QgsLayerTreeLayer,
 )
 from PyQt5.QtCore import QVariant
 from qgis.PyQt.QtGui import QColor
@@ -544,8 +544,6 @@ def create_demographic_layers(
     file_path: Path
 ) -> typing.Union[list[QgsVectorLayer], None]:
     # (table_name, layers)
-    # doc = QDomDocument()
-    # read_write_context = QgsReadWriteContext()
     possible_layers = project.mapLayersByName("BaseLayerDB — Zips_in_Metros")
 
     base_layer = None
@@ -595,22 +593,18 @@ def create_demographic_layers(
         assert len(demo_layers) > 0
         color_demo_layer(DP05_ATTRIBUTES, demo_layers)
 
+    #save
     doc = QDomDocument()
     read_write_context = QgsReadWriteContext()
     for layer in demo_layers:
-            # TODO DO NOT SAVE HERE. STYLING HAPPENS IN CALLER FUNCTION
         layer.exportNamedStyle(doc, read_write_context)
         error = save_census_data_gpkg(layer)
 
         if error == QgsVectorFileWriter.WriterError.NoError:
             demo_layer_path = f"{CENSUS_DATA_GPKG_OUTPUT}|layername={layer.name()}"
-            layer = QgsVectorLayer(
-                demo_layer_path, f"Census-{layer.name()}", "ogr"
-            )
+            layer = QgsVectorLayer(demo_layer_path, f"Census-{layer.name()}", "ogr")
             layer.importNamedStyle(doc)
-            layer.saveStyleToDatabase(
-                layer.name(), f"{layer.name()} style", True, ""
-            )
+            layer.saveStyleToDatabase(layer.name(), f"{layer.name()} style", True, "")
         else:
             logging.error(f"Encountered error {error} when writing {layer.name()}")
     return demo_layers
@@ -679,57 +673,6 @@ def color_demo_layer(
                 renderer.addCategory(category)
             cur_layer.setRenderer(renderer)
             cur_layer.commitChanges()
-    # error = QgsVectorFileWriter.writeAsVectorFormat(
-    #     demo_layer,
-    #     str(CENSUS_DATA_GPKG_OUTPUT / f"Demo-{attribute_name}.gpkg"),
-    #     "UTF-8",
-    #     demo_layer.crs(),
-    #     "GPKG",
-    # )
-    # if error[0] == QgsVectorFileWriter.WriterError.NoError:
-    #     shape_file_vector = QgsVectorLayer(
-    #         str(CENSUS_DATA_GPKG_OUTPUT / f"Demo-{attribute_name}.gpkg"),
-    #         f"{attribute_name}.gpkg",
-    #         "ogr",
-    #     )
-    #     logging.info(f"Demo-{attribute_name}.gpkg file saved")
-    #     # for some reason the writer doesnt save the crs info
-    #     shape_file_vector.setCrs(demo_layer.crs())
-    #     # mutate var so that its now pointing to the
-    #     demo_layer = shape_file_vector
-    # else:
-    #     logging.info(f"Could not save Demo-{attribute_name}.gpkg")
-    #     demo_layer.setRenderer(renderer)
-
-    #     demo_layer.exportNamedStyle(doc, read_write_context)
-    #     demo_layer.commitChanges()
-
-    #     error = save_census_data_gpkg(demo_layer)
-
-    #     if error == QgsVectorFileWriter.WriterError.NoError:
-    #         demo_layer_path = f"{CENSUS_DATA_GPKG_OUTPUT}|layername={demo_layer.name()}"
-    #         demo_layer = QgsVectorLayer(
-    #             demo_layer_path, f"Demo-{attribute_name}", "ogr"
-    #         )
-    #         demo_layer.importNamedStyle(doc)
-    #         demo_layer.saveStyleToDatabase(
-    #             demo_layer.name(), f"{demo_layer.name()} style", True, ""
-    #         )
-    #         demo_layers.append(demo_layer)
-    #     else:
-    #         logging.error(f"Encountered error {error} when writing {demo_layer.name()}")
-    #     # Add the layer to the Layer Tree
-    #     # demo_layers.append(demo_layer)
-    #     # csv_groups.insertChildNode(
-    #     #     attributes.index(attribute_name), QgsLayerTreeLayer(demo_layer)
-    #     # )
-    #     # csv_groups.updateChildVisibilityMutuallyExclusive()
-
-    #     layers.append(demo_layer)
-    #     # Used to limit number of layers generated for testing
-    #     # if index == 6:
-    #     #     logging.info(index)
-    #     #     break
 
 
 def chunked(it, size):
@@ -826,8 +769,8 @@ def demographics_groups(
             desired_attr_value = {census_field_index: value}
             demo_prov.changeAttributeValues({feature_id: desired_attr_value})
         demo_layer.commitChanges()
-    
-    demo_layer.updateExtents() # because we change the size?
+
+    demo_layer.updateExtents()  # because we change the size?
     return demo_layer
 
 
@@ -862,10 +805,6 @@ def read_demographic_data(directory: Path) -> list[tuple[str, list[QgsVectorLaye
     return demo_groups
 
 
-# Create layer groups cant be "saved" to gpkg. to keep the layering, the project must be saved.
-# heatmap_layer_tree_group = QgsLayerTreeGroup("Heating Types")
-# demographic_layers = QgsLayerTreeGroup("Demographic Info")
-
 (
     csv_layer,
     csv_contents,
@@ -876,8 +815,6 @@ location_layer = create_locations_layer_from_csv(csv_contents, csv_headers, csv_
 heatmap_layers = create_heatmap_layers(location_layer.dataProvider(), csv_attributes)
 demo_groups = read_demographic_data(CENSUS_DIRECTORY)
 
-
-# Have to rearrange before saving
 heatmap_tree_group = layer_tree_root.addGroup("Heating Types")
 demo_tree_group = layer_tree_root.addGroup("Demographics")
 
@@ -888,15 +825,15 @@ for i, layer in enumerate(heatmap_layers):
     heatmap_tree_group.insertChildNode(i, tree_layer)
 
 for i, table_layer_list in enumerate(demo_groups):
+    logging.info(f"{i = }, {table_layer_list = }")
     sub_group = demo_tree_group.addGroup(table_layer_list[0])
-    for i, layer in enumerate(table_layer_list[1]):
+    for j, layer in enumerate(table_layer_list[1]):
+        logging.info(f"{j = }, {table_layer_list = }")
         project.addMapLayer(layer, False)
         tree_layer = QgsLayerTreeLayer(layer)
         tree_layer.setItemVisibilityChecked(False)
-        sub_group.insertChildNode(i, tree_layer)
+        sub_group.insertChildNode(j, tree_layer)
     demo_tree_group.insertChildNode(i, sub_group)
 
 project.addMapLayer(location_layer)
 logging.debug("Last one")
-
-# QgsProject.instance().layerTreeRoot().findLayer(layer_id/layername).setItemVisibilityChecked(False)
