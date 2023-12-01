@@ -11,13 +11,13 @@ from qgis.core import (
     QgsGradientColorRamp,
     QgsFeature,
     QgsMapLayer,
-    QgsLayerTreeGroup,
     QgsField,
     QgsCoordinateReferenceSystem,
     QgsReadWriteContext,
     QgsCategorizedSymbolRenderer,
     QgsSymbol,
     QgsRendererCategory,
+    QgsLayerTreeLayer
 )
 from PyQt5.QtCore import QVariant
 from qgis.PyQt.QtGui import QColor
@@ -492,6 +492,14 @@ def load_filtered_data_from_demo_file(
 ):  # -> tuple[dict[str | Any, dict[str, str | Any]] | None, Literal[4, 2] | None]
     """Filters csv to just be the allowed columns for that census table type
 
+    Note:
+        organized as:
+        {"zipcode1" : {"ESTPCT...": value,
+                    "ESTPCT2...": value,
+                    ...},
+        "zipcode2" : {},...
+        }
+
     Args:
         csv_headers (list[str]): the headers of the csv file
         file_path (Path): the path to the census data csv
@@ -546,12 +554,6 @@ def create_demographic_layers(
 
     assert isinstance(base_layer, QgsMapLayer)
 
-    # organized as:
-    # {"zipcode1" : {"ESTPCT...": value,
-    #                "ESTPCT2...": value,
-    #                ...},
-    #  "zipcode2" : {},...
-    # }
     zip_data_dict, range_type = load_filtered_data_from_demo_file(file_path)
     # un recognized table
     assert zip_data_dict is not None
@@ -563,12 +565,7 @@ def create_demographic_layers(
 
     demo_layers: list[QgsVectorLayer] = []
     if "S1901" in file_path.stem:
-        # testing
-        first = True
         for attribute in S1901_ATTRIBUTES:
-            if not first:
-                break
-            first = False
             logging.info(f"Making layer for {attribute =}")
             demo_layers.append(
                 demographics_groups(
@@ -578,11 +575,7 @@ def create_demographic_layers(
         assert len(demo_layers) > 0
         color_demo_layer(S1901_ATTRIBUTES, demo_layers)
     if "S1501" in file_path.stem:
-        first = True
         for attribute in S1501_ATTRIBUTES:
-            if not first:
-                break
-            first = False
             logging.info(f"Making layer for {attribute =}")
             demo_layers.append(
                 demographics_groups(
@@ -592,12 +585,8 @@ def create_demographic_layers(
         assert len(demo_layers) > 0
         color_demo_layer(S1501_ATTRIBUTES, demo_layers)
     if "DP05" in file_path.stem:
-        first = True
         for attribute in DP05_ATTRIBUTES:
-            if not first:
-                break
-            first = False
-            logging.info(f"Making layer for {attribute =} with range {range_type}")
+            logging.info(f"Making layer for {attribute =}")
             demo_layers.append(
                 demographics_groups(
                     range_type, base_layer, attribute, DP05_ALLOW_LIST, zip_data_dict
@@ -621,7 +610,6 @@ def color_demo_layer(
     Returns:
         list[QgsVectorLayer]: _description_
     """
-    # TODO layer should have fields ZCTA, Attr, and supporting attrs
     for cur_layer in table_layers:
         for field_name in cur_layer.fields().names():
             if field_name not in table_attributes:
@@ -664,7 +652,6 @@ def color_demo_layer(
 
             renderer = QgsCategorizedSymbolRenderer(field_name)
             cur_layer.startEditing()
-            logging.info(f"{len(new_uniques) = }")
             for value in new_uniques:
                 symbol = QgsSymbol.defaultSymbol(cur_layer.geometryType())
                 symbol_layer = symbol.symbolLayer(0)
@@ -761,38 +748,21 @@ def demographics_groups(
     # copy base layer information to our demographic layer
     demo_layer.startEditing()
     demo_prov = demo_layer.dataProvider()
-    demo_prov.addAttributes(
-        [QgsField("ZCTA5", QVariant.Type.String)]
-    )
+    demo_prov.addAttributes([QgsField("ZCTA5", QVariant.Type.String)])
     demo_layer.updateFields()
-    logging.info(f"{demo_layer.fields().names() = },{demo_layer.fields().toList() = }")
-    demo_layer.commitChanges()
-
-    # runs about 39k times per layer. see if can combine with other. also only copy zcta attr
-
-    for old_feature in base_layer.getFeatures():
-        new_zcta5_feature = QgsFeature()
-        new_zcta5_feature.setFields(demo_layer.fields())
-        # set feature to possible features
-        new_zcta5_feature.setGeometry(old_feature.geometry())
-        new_zcta5_feature.setAttribute("ZCTA5", old_feature.attributes()[old_feature.fieldNameIndex("ZCTA5")])
-        demo_layer.startEditing()
-        demo_layer.addFeature(new_zcta5_feature)
-        demo_layer.commitChanges()
-
-    demo_layer.startEditing()
     demo_layer.loadNamedStyle(base_layer.styleURI())
     demo_layer.styleManager().copyStylesFrom(base_layer.styleManager())
     demo_layer.commitChanges()
-    # done copying
 
-    # add the four related census column names as fields
+    # add specific fields that are related to the target census table column
     desired_census_columns = []
     for attr_chunk in chunked(table_allow_list, range_type):
         if len(attr_chunk) != range_type:
             break
         if attr_name not in attr_chunk:
             continue
+        # if we get a table grouping ie (PCT PME; EST, MOE, PCT, PME) that contains the target census table column, add it as an attribute
+        # adding as an attribute to the data provider so that everyone has at least the word "NULL" for the value
         for i, _ in enumerate(attr_chunk):
             desired_census_columns.append(attr_chunk[i])
             demo_layer.startEditing()
@@ -800,17 +770,30 @@ def demographics_groups(
             demo_layer.commitChanges()
         break
     demo_layer.updateFields()
-    # runs about 39k times per layer.
-    for feature in demo_layer.getFeatures():
-        # row id. this is each zip code shape
-        feature_id = feature.id()
-        # prepare zip code data
-        target_zip_code_field_index = feature.fieldNameIndex("ZCTA5")
-        target_zip_code: str = feature.attributes()[target_zip_code_field_index]
+
+    for old_feature in base_layer.getFeatures():
+        new_zcta5_feature = QgsFeature()
+        new_zcta5_feature.setFields(demo_layer.fields())
+        # set feature to possible features
+        new_zcta5_feature.setGeometry(old_feature.geometry())
+        new_zcta5_feature.setAttribute(
+            "ZCTA5", old_feature.attributes()[old_feature.fieldNameIndex("ZCTA5")]
+        )
+        # start editing this added feature
+        demo_layer.startEditing()
+        (result, new_features) = demo_prov.addFeatures([new_zcta5_feature])
+        demo_layer.updateFields()  # just for safety
+
+        feature_id = new_features[0].id()
+        target_zip_code_field_index = new_zcta5_feature.fieldNameIndex("ZCTA5")
+        target_zip_code: str = new_zcta5_feature.attributes()[
+            target_zip_code_field_index
+        ]
         target_zip_code_data_dict = zip_data_dict.get(target_zip_code, "")
         if isinstance(target_zip_code_data_dict, str):
             # theres a lot of these, so try not to enable
             # logging.warning(f"Could not find zip code dict entry for {target_zip_code}!")
+            demo_layer.commitChanges()
             continue
         # the census_column_dict relies on the fact that desired_census_columns have been added as data provider attributes (fields) to the layer
         # since values in the raw dict can be erroneous, do not make a color map out of them. filter before you do
@@ -820,10 +803,9 @@ def demographics_groups(
             if column_name in desired_census_columns
         }
 
-        demo_layer.startEditing()
         # final values will either be < 0, NULL, or a valid number
         for key, value in census_column_dict.items():
-            census_field_index = feature.fieldNameIndex(key)
+            census_field_index = new_zcta5_feature.fieldNameIndex(key)
             desired_attr_value = {census_field_index: value}
             demo_prov.changeAttributeValues({feature_id: desired_attr_value})
         demo_layer.commitChanges()
@@ -889,28 +871,28 @@ def read_demographic_data(directory: Path) -> list[tuple[str, list[QgsVectorLaye
 ) = read_housing_data_and_create_temp_location_points_layer(METRO_DIRECTORY)
 location_layer = create_locations_layer_from_csv(csv_contents, csv_headers, csv_layer)
 heatmap_layers = create_heatmap_layers(location_layer.dataProvider(), csv_attributes)
+demo_groups = read_demographic_data(CENSUS_DIRECTORY)
+
+
+# Have to rearrange before saving
+heatmap_tree_group = layer_tree_root.addGroup("Heating Types")
+demo_tree_group = layer_tree_root.addGroup("Demographics")
 
 project.addMapLayer(location_layer)
+for i, layer in enumerate(heatmap_layers):
+    project.addMapLayer(layer, False)
+    tree_layer = QgsLayerTreeLayer(layer)
+    tree_layer.setItemVisibilityChecked(False)
+    heatmap_tree_group.insertChildNode(i, tree_layer)
 
-# Have to rearrange before saving
-heatmap_group = layer_tree_root.addGroup("Heating Types")
-assert isinstance(heatmap_group, QgsLayerTreeGroup)
-for placed_layer in heatmap_layers:
-    project.addMapLayer(placed_layer)
-    heatmap_group.addLayer(placed_layer)
-    project.layerTreeRoot().findLayer(placed_layer.id()).setItemVisibilityChecked(False)
-
-demo_groups = read_demographic_data(CENSUS_DIRECTORY)
-for table_layer_list in demo_groups:
-    for layer in table_layer_list[1]:
-        project.addMapLayer(layer)
-        project.layerTreeRoot().findLayer(layer.id()).setItemVisibilityChecked(False)
-# Have to rearrange before saving
-# demo_group = layer_tree_root.addGroup("Demographic Data")
-# assert isinstance(demo_group, QgsLayerTreeGroup)
-# for index, placed_layer in enumerate(demo_groups):
-#     project.addMapLayer(demo_groups[index], False)
-#     demo_group.addLayer(demo_groups[index])
+for i, table_layer_list in enumerate(demo_groups):
+    sub_group = demo_tree_group.addGroup(table_layer_list[0])
+    for i, layer in enumerate(table_layer_list[1]):
+        project.addMapLayer(layer, False)
+        tree_layer = QgsLayerTreeLayer(layer)
+        tree_layer.setItemVisibilityChecked(False)
+        sub_group.insertChildNode(i, tree_layer)
+    demo_tree_group.insertChildNode(i, sub_group)
 
 logging.debug("Last one")
 
