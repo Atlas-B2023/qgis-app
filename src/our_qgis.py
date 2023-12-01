@@ -595,6 +595,24 @@ def create_demographic_layers(
         assert len(demo_layers) > 0
         color_demo_layer(DP05_ATTRIBUTES, demo_layers)
 
+    doc = QDomDocument()
+    read_write_context = QgsReadWriteContext()
+    for layer in demo_layers:
+            # TODO DO NOT SAVE HERE. STYLING HAPPENS IN CALLER FUNCTION
+        layer.exportNamedStyle(doc, read_write_context)
+        error = save_census_data_gpkg(layer)
+
+        if error == QgsVectorFileWriter.WriterError.NoError:
+            demo_layer_path = f"{CENSUS_DATA_GPKG_OUTPUT}|layername={layer.name()}"
+            layer = QgsVectorLayer(
+                demo_layer_path, f"Census-{layer.name()}", "ogr"
+            )
+            layer.importNamedStyle(doc)
+            layer.saveStyleToDatabase(
+                layer.name(), f"{layer.name()} style", True, ""
+            )
+        else:
+            logging.error(f"Encountered error {error} when writing {layer.name()}")
     return demo_layers
 
 
@@ -743,8 +761,7 @@ def demographics_groups(
         zip_data_dict (dict[str, dict[str, str]]): dictionary of all zip codes, and each desired column with this columns data. should be 33k long, and each entry should be a dict of length about 40
     """
     demo_layer = QgsVectorLayer("MultiPolygon?crs=EPSG:3857", f"{attr_name}", "memory")
-    doc = QDomDocument()
-    read_write_context = QgsReadWriteContext()
+
     # copy base layer information to our demographic layer
     demo_layer.startEditing()
     demo_prov = demo_layer.dataProvider()
@@ -809,22 +826,8 @@ def demographics_groups(
             desired_attr_value = {census_field_index: value}
             demo_prov.changeAttributeValues({feature_id: desired_attr_value})
         demo_layer.commitChanges()
-
-    # TODO DO NOT SAVE HERE. STYLING HAPPENS IN CALLER FUNCTION
-    demo_layer.exportNamedStyle(doc, read_write_context)
-    error = save_census_data_gpkg(demo_layer)
-
-    if error == QgsVectorFileWriter.WriterError.NoError:
-        demo_layer_path = f"{CENSUS_DATA_GPKG_OUTPUT}|layername={demo_layer.name()}"
-        demo_layer = QgsVectorLayer(
-            demo_layer_path, f"Census-{demo_layer.name()}", "ogr"
-        )
-        demo_layer.importNamedStyle(doc)
-        demo_layer.saveStyleToDatabase(
-            demo_layer.name(), f"{demo_layer.name()} style", True, ""
-        )
-    else:
-        logging.error(f"Encountered error {error} when writing {demo_layer.name()}")
+    
+    demo_layer.updateExtents() # because we change the size?
     return demo_layer
 
 
@@ -878,7 +881,6 @@ demo_groups = read_demographic_data(CENSUS_DIRECTORY)
 heatmap_tree_group = layer_tree_root.addGroup("Heating Types")
 demo_tree_group = layer_tree_root.addGroup("Demographics")
 
-project.addMapLayer(location_layer)
 for i, layer in enumerate(heatmap_layers):
     project.addMapLayer(layer, False)
     tree_layer = QgsLayerTreeLayer(layer)
@@ -894,6 +896,7 @@ for i, table_layer_list in enumerate(demo_groups):
         sub_group.insertChildNode(i, tree_layer)
     demo_tree_group.insertChildNode(i, sub_group)
 
+project.addMapLayer(location_layer)
 logging.debug("Last one")
 
 # QgsProject.instance().layerTreeRoot().findLayer(layer_id/layername).setItemVisibilityChecked(False)
