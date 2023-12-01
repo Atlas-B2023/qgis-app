@@ -2,6 +2,9 @@
 
 ## Installing QGIS
 
+> [!NOTE]
+> This document assumes that you are an Atlas analyst and have the .gbd files that were handed over at the end of our project. If this is not your case, you can try to follow along by using an OpenMapBox world map, a EPSG 4347 projection, and 3 layers: 1 being MSA blocks, the other being ZCTA blocks inside of these MSAs, and the last being state border shapefiles.
+
 To install QGIS, head to their website [QGIS Download](https://qgis.org/en/site/forusers/download.html) and download version 3.34.1.
 This can be installed anywhere on the device.
 
@@ -35,7 +38,7 @@ To load the sample housing data, open `sample.zip` and copy all files with a num
 
 Create a new folder named "test", located at `ResidentialElectrificationTracker\output\metro_data\`, and paste in the copied files.
 
-To load the sample demographic data, open `sample.zip` and copy the reamining unused files (typically starting with "acs5").
+To load the sample demographic data, open `sample.zip` and copy the remaining unused files (typically starting with "acs5").
 
 Create a new folder named "census_data", located at `ResidentialElectrificationTracker\output\`, and paste in the copied files.
 
@@ -43,9 +46,9 @@ Create a new folder named "census_data", located at `ResidentialElectrificationT
 
 To run the scrip, load the base map qgis project.
 
-Click on the python icon:
+Click on the python icon (The second from the right on the bottom row of the taskbar on the top of the screen):
 
-<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Python-logo-notext.svg/640px-Python-logo-notext.svg.png" width="100" height="100"> (The second from the right on the bottom row of the taskbar on the top of the screen).
+<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/c/c3/Python-logo-notext.svg/640px-Python-logo-notext.svg.png" width="100" height="100"> 
 
 Next, in the python console that appears, click the Show Editor button (the third from the left that looks like a sheet of paper)
 
@@ -65,7 +68,7 @@ Now run the script by clicking the green arrow icon in the script editor (fifth 
 
 When saving the project, be sure to save it as a copy, as to not override the existing one.
 
-It might be useful to create a backup of the project in the event the project is overriden.
+It might be useful to create a backup of the project in the event the project is overridden.
 
 ### Closing the Project
 
@@ -77,9 +80,9 @@ The second will ask if you would like to save the project; click "Discard."
 
 ### Why is it Freezing?
 
-Creating the GeoPackage files creates a database. When QGIS goes to load information from these tables, it must run SQL operations. Each entry in the Census GPKG database is about 15KBs, and there are about 23,000 ish entries. This means that there will be a lot of CPU waiting time as this gets loaded in. If you find that this process takes an exceptionally long amount of time, you can try to crash QGIS by clicking profusely on the application. 
+Creating the GeoPackage files creates a database. When QGIS goes to load information from these tables, it must run SQL operations. Each of the 33 tables in the Census GPKG database has about 23,000-ish entries, and each entry is about 15 kilobytes. This means that there will be a lot of CPU waiting time as this gets loaded in. If you find that this process takes an exceptionally long amount of time, you can try to crash QGIS by clicking profusely on the application. 
 
-This is fine as the databases get stored and are saved independently of what the QGIS graphical user interface is doing. You can then create a new GeoPackage database connection to these saved databases in a fresh project, and play with the data there. More information is in the video tutorials.
+This is fine as the databases are saved independently of what the QGIS graphical user interface is doing. You can then create a new GeoPackage database connection to these saved databases in a fresh project, and play with the data there. More information is in the video tutorials.
 
 ## Development
 
@@ -104,7 +107,7 @@ There are a few paths that need to be set up within the system environment. The 
 ### Setting up Python
 
 > [!NOTE]
-> It does not matter what Python you have installed since QGIS will be running the script. Keep in mind that it will use version 3.9, though. 
+> Your Python version does not affect the script when it is being ran in QGIS, as it comes packaged with its own Python (version 3.9). 
 
 Steps:
 
@@ -112,7 +115,4 @@ Steps:
 2. Download this repository as a zip file
 3. Un-zip the folder into your desired folder.
 4. Make sure that this folder is adjacent in the file viewer to your QGIS project folder!
-5. Run the included setup.bat script to create a virtual environment and install PyQt5! (When prompted, give the file path from step 1.)
-
-> [!WARN]
-> The setup script uses the default python installation. If you have another 
+5. Run the included setup.bat script to create a virtual environment and install PyQt5! (When prompted, give the file path from step 1)
