@@ -267,7 +267,6 @@ def read_housing_data_and_create_temp_location_points_layer(
 
     csv_info += "".join([f"&field={header}" for header in headers])
 
-    # location_layer_temp = QgsVectorLayer(csv_info, "Locations", "memory")
     # layer, csv, headers, attributes
     return (
         QgsVectorLayer(csv_info, "Locations", "memory"),
@@ -275,17 +274,6 @@ def read_housing_data_and_create_temp_location_points_layer(
         headers,
         list(itertools.dropwhile(lambda x: x != "Electricity", headers)),
     )
-
-    # try:
-    #     # Extracts desired attribute names from the csv headers
-    #     new_prov = create_location_layers_from_csv(merged_csv_contents, headers, location_layer_temp)
-    #     # attributes go up to heating details, skipping the general property info
-    #     attributes = list(itertools.dropwhile(lambda x: x != "Electricity", headers))
-    #     create_heatmap_layers(new_prov, attributes, heating_layers)
-    # except Exception as e:
-    #     logging.error(e)
-    #     logging.error(traceback.format_exc())
-
 
 # Used to create a point layer from csv data
 def create_locations_layer_from_csv(
@@ -555,8 +543,9 @@ def load_filtered_data_from_demo_file(
 
 
 # Used to create heatmap layers from csv demographic data
-def create_demographic_layers(file_path: Path) -> typing.List[QgsVectorLayer]:
-    demo_layers: list[QgsVectorLayer] = []
+def create_demographic_layers(file_path: Path) -> typing.Union[list[tuple[str, list[QgsVectorLayer]]], None]:
+    # (table_name, layers)
+    demo_layers:list[tuple[str,list[QgsVectorLayer]]] = []
     # doc = QDomDocument()
     # read_write_context = QgsReadWriteContext()
     possible_layers = project.mapLayersByName("BaseLayerDB — Zips_in_Metros")
@@ -577,25 +566,40 @@ def create_demographic_layers(file_path: Path) -> typing.List[QgsVectorLayer]:
     # un recognized table
     assert zip_data_dict is not None
     assert range_type is not None
-    logging.info(
-        f"{len(zip_data_dict) = }, {len(zip_data_dict.get('90715', '')) = }, {range_type = }"
-    )
-    demo_layer = None
     if range_type == 2:
         if "S1901" in file_path.stem:
+            s1901_layers:list[QgsVectorLayer] = []
             for attribute in S1901_ATTRIBUTES:
                 logging.info(f"{attribute =}")
-                demographics_groups_of_two(
+                s1901_layers.append(demographics_groups_of_two(
                     base_layer, attribute, S1901_ALLOW_LIST, zip_data_dict
-                )
-                # demo_layer = demographics_groups_of_two(base_layer, attribute, zip_data_dict)
-    # elif range_type == 4:
-    #     if "S1501" in file_path.stem:
-    #         demo_layer = demographics_groups_of_four()
-    #     if "DP05" in file_path.stem:
-    #         demo_layer = demographics_groups_of_four()
+                ))
+            assert len(s1901_layers) > 0 
+            demo_layers.append(("S1901", s1901_layers)) # type: ignore
+    elif range_type == 4:
+        return None
+        # if "S1501" in file_path.stem:
+        #     s1501_layers:list[QgsVectorLayer] = []
+        #     for attribute in S1501_ATTRIBUTES:
+        #         logging.info(f"{attribute =}")
+        #         s1501_layers.append(demographics_groups_of_four(
+        #             base_layer, attribute, S1501_ALLOW_LIST, zip_data_dict
+        #         ))
+        #     assert len(s1501_layers) > 0 
+        #     demo_layers.append(tuple("S1901", s1901_layers)) # type: ignore
+        # if "DP05" in file_path.stem:
+        #     dp05_layers:list[QgsVectorLayer] = []
+        #     for attribute in S1501_ATTRIBUTES:
+        #         logging.info(f"{attribute =}")
+        #         dp05_layers.append(demographics_groups_of_four(
+        #             base_layer, attribute, DP05_ALLOW_LIST, zip_data_dict
+        #         ))
+        #     assert len(dp05_layers) > 0 
+        #     demo_layers.append(tuple("S1901", s1901_layers)) # type: ignore
     else:
-        logging.warning("could not read file")
+        logging.warning("could not recognize file format.")
+        return None
+    
 
     # # csv_groups = QgsLayerTreeGroup(f"{file_path.stem}")
 
@@ -720,7 +724,7 @@ def create_demographic_layers(file_path: Path) -> typing.List[QgsVectorLayer]:
     #     # if index == 6:
     #     #     logging.info(index)
     #     #     break
-    demo_layers.append(demo_layer)  # do not keep this
+    # demo_layers.append(demo_layer)  # do not keep this
     return demo_layers
 
 
@@ -739,7 +743,7 @@ def demographics_groups_of_two(
     attr_name: str,
     table_allow_list: list,
     zip_data_dict: dict[str, dict[str, str]],
-):
+) -> QgsVectorLayer:
     """create layer based on census column
 
 
@@ -752,135 +756,91 @@ def demographics_groups_of_two(
         zip_data_dict (dict[str, dict[str, str]]): dictionary of all zip codes, and each desired column with this columns data. should be 33k long, and each entry should be a dict of length about 40
     """
     demo_layer = QgsVectorLayer("MultiPolygon?crs=EPSG:3857", f"{attr_name}", "memory")
-    base_layer_fields = base_layer.fields()
-
+    doc = QDomDocument()
+    read_write_context = QgsReadWriteContext()
     # copy base layer information to our demographic layer
     demo_layer.startEditing()
     demo_prov = demo_layer.dataProvider()
-    demo_prov.addAttributes(base_layer_fields.toList())
-    demo_fields = demo_prov.fields()
+    demo_prov.addAttributes(base_layer.fields().toList())
     demo_layer.triggerRepaint()
     demo_layer.commitChanges()
 
-    for ftr in base_layer.getFeatures():
-        new_ftr = QgsFeature()
-        new_ftr.setGeometry(ftr.geometry())
-        new_ftr.setAttributes(ftr.attributes())
+    for old_feature in base_layer.getFeatures():
+        new_feature = QgsFeature()
+        new_feature.setGeometry(old_feature.geometry())
+        new_feature.setAttributes(old_feature.attributes())
         demo_layer.startEditing()
-        demo_layer.addFeature(new_ftr)
+        demo_layer.addFeature(new_feature)
         demo_layer.commitChanges()
 
     demo_layer.startEditing()
     demo_layer.loadNamedStyle(base_layer.styleURI())
     demo_layer.styleManager().copyStylesFrom(base_layer.styleManager())
-    # done copying
-    demo_layer.deleteAttributes(
-        [27, 28, 29, 30]
-    )  # Makes sure these attributes are empty before filling them. are we sure we want to delete 27
     demo_layer.commitChanges()
+    # done copying
 
     # add the two related census column names as fields
+    desired_census_columns = []
     for attr_chunk in chunked(table_allow_list, 2):
         if len(attr_chunk) != 2:
             break
-        logging.info(f"{len(attr_chunk)}, {attr_chunk[0]},{attr_chunk[1]}")
-        if attr_name == attr_chunk[0]: # might be able to get target index from tuple, and iterate over the tuple
+        if attr_name not in attr_chunk:
+            continue
+        for i, _ in enumerate(attr_chunk):
+            desired_census_columns.append(attr_chunk[i])
             demo_layer.startEditing()
-            demo_prov.addAttributes([QgsField(attr_chunk[0], QVariant.Type.String)])
+            demo_prov.addAttributes([QgsField(attr_chunk[i], QVariant.Type.String)])
             demo_layer.commitChanges()
-            demo_layer.startEditing()
-            demo_prov.addAttributes([QgsField(attr_chunk[1], QVariant.Type.String)])
-            demo_layer.commitChanges()
-            break
+        break
+    demo_layer.updateFields()
+    # runs about 39k times per layer.
+    for feature in demo_layer.getFeatures():
+        # row id. this is each zip code shape
+        feature_id = feature.id()
+        # prepare zip code data
+        target_zip_code_field_index = feature.fieldNameIndex("ZCTA5")
+        target_zip_code: str = feature.attributes()[target_zip_code_field_index]
+        target_zip_code_data_dict = zip_data_dict.get(target_zip_code, "")
+        if isinstance(target_zip_code_data_dict, str):
+            #theres a lot of these, so try not to enable
+            # logging.warning(f"Could not find zip code dict entry for {target_zip_code}!")
+            continue
+        # the census_column_dict relies on the fact that desired_census_columns have been added as data provider attributes (fields) to the layer
+        # since values in the raw dict can be erroneous, do not make a color map out of them. filter before you do
+        census_column_dict = {
+            column_name: column_value
+            for column_name, column_value in target_zip_code_data_dict.items()
+            if column_name in desired_census_columns
+        }
 
-    logging.info(f"{demo_layer.fields().names() = }")
-    # loop over all zip code polygons in the demo layer (copied from base layer)
-    # for feature in demo_layer.getFeatures():
-    #     zip_code = feature.attribute("ZCTA5")
+        demo_layer.startEditing()
+        # final values will either be < 0, NULL, or a valid number
+        for key, value in census_column_dict.items():
+            census_field_index = feature.fieldNameIndex(key)
+            attr_value = {census_field_index: value}
+            demo_prov.changeAttributeValues({feature_id: attr_value})
+        demo_layer.commitChanges()
 
-    #     if (zip_code in zip_data_dict.keys()) and (
-    #         attr_name not in demo_fields.names()
-    #     ):
-    #         feat_id = feature.id()
-    #         new_feat = demo_layer.getFeature(feat_id)
+    # TODO DO NOT SAVE HERE. STYLING HAPPENS IN CALLER FUNCTION
+    demo_layer.exportNamedStyle(doc, read_write_context)
+    error = save_census_data_gpkg(demo_layer)
 
-    #         if new_feat.fields().size() != 29:
-    #             new_feat.resizeAttributes(29)
-    #         features_size = new_feat.fields().size()
-
-    #         for chunk in chunked(zip_data_dict.get(zip_code), 2):
-    #             if "ZCTA" in chunk or len(chunk) != 2:
-    #                 break
-    #             if chunk[0] == attr_name:
-    #                 next_attr_name = chunk[1]
-    #                 assert isinstance(next_attr_name, str)
-
-    #                 demo_layer.startEditing()
-    #                 add_attr_as_attr = demo_layer.addAttribute(
-    #                     QgsField(attr_name, QVariant.String)
-    #                 )
-    #                 add_next_attr_as_attr = demo_layer.addAttribute(
-    #                     QgsField(next_attr_name, QVariant.String)
-    #                 )
-    #                 demo_layer.commitChanges()
-
-    #                 append_success_attr_name = new_feat.fields().append(
-    #                     QgsField(attr_name, QVariant.String),
-    #                     # originIndex=features_size + i,
-    #                 )
-    #                 append_success_next_attr_name = new_feat.fields().append(
-    #                     QgsField(next_attr_name, QVariant.String),
-    #                     # originIndex=features_size + i,
-    #                 )
-
-    #                 logging.info(
-    #                     f"{add_attr_as_attr = }, {append_success_attr_name =}, {zip_code =}"
-    #                 )
-    #                 logging.info(
-    #                     f"{add_next_attr_as_attr = }, {append_success_next_attr_name =}, {zip_code =}"
-    #                 )
-
-    #                 field_idx = new_feat.fields().indexOf(attr_name)
-    #                 next_field_idx = new_feat.fields().indexOf(next_attr_name)
-
-    #                 attr_value = zip_data_dict[zip_code].get(attr_name)
-    #                 next_attr_value = zip_data_dict[zip_code].get(next_attr_name)
-    #                 # logging.info(f"{next_attr_value = }")
-    #                 # logging.info(
-    #                 #     f"{new_feat.fields().isEmpty() = },{new_feat.fields().toList() = },{new_feat.fields().indexFromName(next_attr_name) = }"
-    #                 # )
-    #                 assert attr_value is not None
-    #                 assert next_attr_value is not None
-
-    #                 if (
-    #                     field_idx == -1 and features_size == 27
-    #                 ):  # first file loop is always messed up
-    #                     new_feat.setAttribute(features_size, attr_value)
-    #                     new_feat.setAttribute(features_size + 1, next_attr_value)
-    #                     # logging.info(f"length of field {attr_name}: {new_feat.fields().field(new_feat.fields().indexOf(attr_name)).length()}")
-    #                 elif (
-    #                     field_idx == -1 and not features_size == 27
-    #                 ):  # second and subsequent runs, and first layer in this file
-    #                     new_feat.setAttribute(features_size - 2, attr_value)
-    #                     new_feat.setAttribute(features_size + 1 - 2, next_attr_value)
-    #                     # logging.info(f"length of field {attr_name}: {new_feat.fields().field(new_feat.fields().indexOf(attr_name)).length()}")
-    #                 else:  # other wise
-    #                     new_feat.setAttribute(field_idx, attr_value)
-    #                     new_feat.setAttribute(next_field_idx, next_attr_value)
-    #                     logging.info(
-    #                         f"length of field {attr_name}: {new_feat.fields().field(new_feat.fields().indexOf(attr_name)).length()}"
-    #                     )
-
-    #                 # target_zip_dict = zip_data_dict.get(zip_code_feature)
-    #                 # assert target_zip_dict is not None # shouldnt happen due to if statement. if key exist and val is none, issue in csv
-    #                 # next_val_name = target_zip_dict.get(next_attr_name)
-    #                 # assert next_val_name is not None # shouldnt happen due to if statement. if key exist and val is none, issue in csv
-
-    #         demo_layer.startEditing()
-    #         demo_layer.updateFeature(new_feat)
-    #         demo_layer.commitChanges()
-
-    project.addMapLayer(demo_layer)
+    if error == QgsVectorFileWriter.WriterError.NoError:
+        demo_layer_path = (
+            f"{CENSUS_DATA_GPKG_OUTPUT}|layername={demo_layer.name()}"
+        )
+        demo_layer = QgsVectorLayer(
+            demo_layer_path, f"Census-{demo_layer.name()}", "ogr"
+        )
+        demo_layer.importNamedStyle(doc)
+        demo_layer.saveStyleToDatabase(
+            demo_layer.name(), f"{demo_layer.name()} style", True, ""
+        )
+    else:
+        logging.error(
+            f"Encountered error {error} when writing {demo_layer.name()}"
+        )
+    return demo_layer
 
 
 # Creates heatmap layers for csvs that are grouped in fours
@@ -961,7 +921,7 @@ def translate(value, fromMin, fromMax, toMin, toMax):
     return toMin + (valueScaled * toSpan)
 
 
-def read_demographic_data(directory: Path) -> typing.List[typing.List[QgsVectorLayer]]:
+def read_demographic_data(directory: Path) -> list[tuple[str,list[QgsVectorLayer]]]:
     """Read the census directory and create a list of vector layers for each filtered field in each file found in the dir.
 
     Args:
@@ -970,11 +930,15 @@ def read_demographic_data(directory: Path) -> typing.List[typing.List[QgsVectorL
     Returns:
         typing.List[typing.List[QgsVectorLayer]]: list of lists, grouped by filename
     """
-    demo_groups: list[list[QgsVectorLayer]] = []
+    demo_groups: list[tuple[str,list[QgsVectorLayer]]] = []
 
     # All files in the other folders, in the layers folder, will be processed individually
     for file_path in directory.glob("*.csv"):
-        demo_groups.append(create_demographic_layers(file_path))
+        layers_for_file = create_demographic_layers(file_path)
+        if layers_for_file is None:
+            continue
+        demo_groups.extend(layers_for_file)
+    assert len(demo_groups) > 0
     return demo_groups
 
 
@@ -1014,6 +978,9 @@ for index, placed_layer in enumerate(heatmap_layers):
     project.addMapLayer(heatmap_layers[index], False)
     heatmap_group.addLayer(heatmap_layers[index])
 
+for table_layer_list in demo_groups:
+    for layer in table_layer_list[1]:
+        project.addMapLayer(layer)
 # Have to rearrange before saving
 # demo_group = layer_tree_root.addGroup("Demographic Data")
 # assert isinstance(demo_group, QgsLayerTreeGroup)
