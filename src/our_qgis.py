@@ -225,7 +225,7 @@ project.read()
 layer_tree_root = project.instance().layerTreeRoot()
 
 # Load all layers
-layers = []
+demo_layers = []
 
 
 # Read all files in the directory stated and create layers accordingly
@@ -531,9 +531,9 @@ def load_filtered_data_from_demo_file(
 # Used to create heatmap layers from csv demographic data
 def create_demographic_layers(
     file_path: Path
-) -> typing.Union[list[tuple[str, list[QgsVectorLayer]]], None]:
+) -> typing.Union[list[QgsVectorLayer], None]:
     # (table_name, layers)
-    demo_layers: list[tuple[str, list[QgsVectorLayer]]] = []
+    demo_layers: list[QgsVectorLayer] = []
     # doc = QDomDocument()
     # read_write_context = QgsReadWriteContext()
     possible_layers = project.mapLayersByName("BaseLayerDB — Zips_in_Metros")
@@ -554,43 +554,38 @@ def create_demographic_layers(
     # un recognized table
     assert zip_data_dict is not None
     assert range_type is not None
-    if range_type == 2:
-        if "S1901" in file_path.stem:
-            s1901_layers: list[QgsVectorLayer] = []
-            for attribute in S1901_ATTRIBUTES:
-                logging.info(f"Making layer for {attribute =}")
-                s1901_layers.append(
-                    demographics_groups_of_two(
-                        base_layer, attribute, S1901_ALLOW_LIST, zip_data_dict
-                    )
-                )
-            assert len(s1901_layers) > 0
-            demo_layers.append(("S1901", s1901_layers))  # type: ignore
-        if "S1501" in file_path.stem:
-            s1501_layers: list[QgsVectorLayer] = []
-            for attribute in S1501_ATTRIBUTES:
-                logging.info(f"Making layer for {attribute =}")
-                s1501_layers.append(
-                    demographics_groups_of_two(
-                        base_layer, attribute, S1501_ALLOW_LIST, zip_data_dict
-                    )
-                )
-            assert len(s1501_layers) > 0
-            demo_layers.append(("S1901", s1501_layers))  # type: ignore
-    elif range_type == 4:
-        return None
-        # if "DP05" in file_path.stem:
-        #     dp05_layers:list[QgsVectorLayer] = []
-        #     for attribute in S1501_ATTRIBUTES:
-        #         logging.info(f"{attribute =}")
-        #         dp05_layers.append(demographics_groups_of_four(
-        #             base_layer, attribute, DP05_ALLOW_LIST, zip_data_dict
-        #         ))
-        #     assert len(dp05_layers) > 0
-        #     demo_layers.append(tuple("S1901", s1901_layers)) # type: ignore
-    else:
+
+    if range_type not in [2, 4]:
         logging.warning("could not recognize file format.")
         return None
+
+    if "S1901" in file_path.stem:
+        for attribute in S1901_ATTRIBUTES:
+            logging.info(f"Making layer for {attribute =}")
+            demo_layers.append(
+                demographics_groups(
+                    2, base_layer, attribute, S1901_ALLOW_LIST, zip_data_dict
+                )
+            )
+        assert len(demo_layers) > 0
+    if "S1501" in file_path.stem:
+        for attribute in S1501_ATTRIBUTES:
+            logging.info(f"Making layer for {attribute =}")
+            demo_layers.append(
+                demographics_groups(
+                    2, base_layer, attribute, S1501_ALLOW_LIST, zip_data_dict
+                )
+            )
+        assert len(demo_layers) > 0
+    if "DP05" in file_path.stem:
+        for attribute in DP05_ATTRIBUTES:
+            logging.info(f"Making layer for {attribute =}")
+            demo_layers.append(
+                demographics_groups(
+                    4, base_layer, attribute, DP05_ALLOW_LIST, zip_data_dict
+                )
+            )
+        assert len(demo_layers) > 0
 
     # # csv_groups = QgsLayerTreeGroup(f"{file_path.stem}")
 
@@ -729,7 +724,8 @@ def chunked(it, size):
 
 
 # Creates heatmap layers for csvs that are grouped in twos
-def demographics_groups_of_two(
+def demographics_groups(
+    range_type: int,
     base_layer: QgsVectorLayer,
     attr_name: str,
     table_allow_list: list,
@@ -756,6 +752,8 @@ def demographics_groups_of_two(
     demo_layer.triggerRepaint()
     demo_layer.commitChanges()
 
+    # runs about 39k times per layer. see if can combine with other. also only copy zcta attr
+
     for old_feature in base_layer.getFeatures():
         new_feature = QgsFeature()
         new_feature.setGeometry(old_feature.geometry())
@@ -770,10 +768,10 @@ def demographics_groups_of_two(
     demo_layer.commitChanges()
     # done copying
 
-    # add the two related census column names as fields
+    # add the four related census column names as fields
     desired_census_columns = []
-    for attr_chunk in chunked(table_allow_list, 2):
-        if len(attr_chunk) != 2:
+    for attr_chunk in chunked(table_allow_list, range_type):
+        if len(attr_chunk) != range_type:
             break
         if attr_name not in attr_chunk:
             continue
@@ -808,8 +806,8 @@ def demographics_groups_of_two(
         # final values will either be < 0, NULL, or a valid number
         for key, value in census_column_dict.items():
             census_field_index = feature.fieldNameIndex(key)
-            attr_value = {census_field_index: value}
-            demo_prov.changeAttributeValues({feature_id: attr_value})
+            desired_attr_value = {census_field_index: value}
+            demo_prov.changeAttributeValues({feature_id: desired_attr_value})
         demo_layer.commitChanges()
 
     # TODO DO NOT SAVE HERE. STYLING HAPPENS IN CALLER FUNCTION
@@ -827,76 +825,6 @@ def demographics_groups_of_two(
         )
     else:
         logging.error(f"Encountered error {error} when writing {demo_layer.name()}")
-    return demo_layer
-
-
-# Creates heatmap layers for csvs that are grouped in fours
-def demographics_groups_of_four(
-    attributes: typing.List[str],
-    attribute_name: str,
-    base_layer: QgsVectorLayer,
-    data: typing.Dict[str, typing.Dict[str, str]],
-    index: int,
-) -> QgsVectorLayer:
-    logging.info(f"{attribute_name = }")
-    demo_layer = QgsVectorLayer(
-        "MultiPolygon?crs=EPSG:3857", f"{attribute_name}", "memory"
-    )
-    demo_prov = demo_layer.dataProvider()
-    original_fields = base_layer.fields()
-    demo_prov.addAttributes(original_fields.toList())
-
-    demo_layer.triggerRepaint()
-    demo_fields = demo_prov.fields()
-
-    demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
-    for ftr in base_layer.getFeatures():
-        new_ftr = QgsFeature()
-        new_ftr.setGeometry(ftr.geometry())
-        new_ftr.setAttributes(ftr.attributes())
-        demo_layer.addFeature(new_ftr)
-    demo_layer.loadNamedStyle(base_layer.styleURI())
-    demo_layer.styleManager().copyStylesFrom(base_layer.styleManager())
-
-    demo_layer.startEditing()  # Acts as with edit(demo_layer), as that method does not work
-    demo_layer.deleteAttributes(
-        [27, 28, 29, 30]
-    )  # Makes sure these attributes are empty before filling them
-
-    for feature in demo_layer.getFeatures():
-        zip_code = feature.attribute("ZCTA5")
-
-        # Makes sure there is data for a zip code and the attribute does not already exist in the fields
-        if (zip_code in data.keys()) and (attribute_name not in demo_fields.names()):
-            feat_id = feature.id()
-            new_feat = demo_layer.getFeature(feat_id)
-            features_size = new_feat.fields().size()
-
-            if features_size == 27:
-                new_feat.resizeAttributes(31)
-                features_size = new_feat.fields().size()
-
-            # Adds the group of four attributes to the zip code
-            # If the index statement was changed above, the values in range will also need to be changed
-            for i in range(-2, 2):
-                if next_atter_name == "ZCTA":
-                    break
-                demo_layer.addAttribute(QgsField(next_atter_name, QVariant.String))
-                new_feat.fields().append(
-                    QgsField(next_atter_name, QVariant.String),
-                    originIndex=features_size + i,
-                )
-                field_idx = new_feat.fields().indexOf(next_atter_name)
-                value = data[zip_code].get(next_atter_name).strip()
-
-                if field_idx == -1 and features_size == 27:
-                    new_feat.setAttribute(features_size + i, value)
-                elif field_idx == -1 and not features_size == 27:
-                    new_feat.setAttribute(features_size + i - 4, value)
-                else:
-                    new_feat.setAttribute(field_idx, value)
-
-            demo_layer.updateFeature(new_feat)
     return demo_layer
 
 
@@ -925,7 +853,8 @@ def read_demographic_data(directory: Path) -> list[tuple[str, list[QgsVectorLaye
         layers_for_file = create_demographic_layers(file_path)
         if layers_for_file is None:
             continue
-        demo_groups.extend(layers_for_file)
+        demo_groups.append((file_path.stem, layers_for_file))
+
     assert len(demo_groups) > 0
     return demo_groups
 
@@ -934,7 +863,7 @@ def read_shape_file(directory: Path):
     for file_path in directory.glob("*.shp"):
         layer = QgsVectorLayer(str(file_path), file_path.stem, "ogr")
         try:
-            layers.append(layer)
+            demo_layers.append(layer)
             project.instance().addMapLayer(layer)
         except Exception:
             logging.warning("Layer " + file_path.stem + " failed to load!")
