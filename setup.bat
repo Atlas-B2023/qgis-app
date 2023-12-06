@@ -32,7 +32,7 @@ if !errorlevel! neq 0 (
 )
 
 :: Install PyQt5 using pip
-pip install PyQt5
+pip install -r requirements.txt
 
 :: Deactivate the virtual environment
 deactivate

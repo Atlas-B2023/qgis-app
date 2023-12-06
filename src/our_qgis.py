@@ -35,7 +35,7 @@ from sys import exit
 CODE_PROJECT_DIRECTORY = Path(__file__).parent.parent
 CODE_PARENT_DIRECTORY = CODE_PROJECT_DIRECTORY.parent
 # change to name of folder of where saved project is
-QGIS_PROJECT_FILE_DIRECTORY = CODE_PARENT_DIRECTORY / "current_qgis_map"
+QGIS_PROJECT_FILE_DIRECTORY = CODE_PARENT_DIRECTORY / "iqp_qgis_project"
 
 # recurse in this directory to get all metros
 METRO_DIRECTORY = (
@@ -238,7 +238,6 @@ def read_housing_data_and_create_temp_location_points_layer(
 ) -> tuple[QgsVectorLayer, list[typing.Any], list[str], list[str]]:
     # All data within files in the housing folder will be combined in memory and processed as one
     # Get list of all zipcode csvs
-    first = True
     merged_csv_contents = []
     headers = []
     zip_code_csv_regex = re.compile(r"[0-9]{3}|[0-9]{4}|[0-9]{5}")
@@ -247,9 +246,10 @@ def read_housing_data_and_create_temp_location_points_layer(
         for path in all_metros_directory.rglob("*.csv")
         if zip_code_csv_regex.match(path.stem) is not None
     ]
-
-    for zip_file in csv_files:
-        with open(zip_file, "r", encoding="utf-8") as f:
+    logging.info(csv_files)
+    first = True
+    for zip_code_file in csv_files:
+        with open(zip_code_file, "r", encoding="utf-8") as f:
             lines = [line.strip("\r\n") for line in f.readlines() if line.strip("\r\n")]
             if first:
                 first = False
@@ -257,9 +257,7 @@ def read_housing_data_and_create_temp_location_points_layer(
             merged_csv_contents.extend(lines[1:])
 
     # Create the csv path (csv_info) and add the csv headers to the path
-    csv_info = "Point?crs=EPSG:4326"
-
-    csv_info += "".join([f"&field={header}" for header in headers])
+    csv_info = f"Point?crs=EPSG:4326{''.join([f'&field={header}' for header in headers])}"
 
     # layer, csv, headers, attributes
     return (
@@ -288,14 +286,12 @@ def create_locations_layer_from_csv(
     """
     # list of location dots to be added to the layer
     feats = []
-
     locations_layer.startEditing()
     prov = locations_layer.dataProvider()
-    fields = prov.fields()
 
     for line in csv_contents:
         csv_values = line.split(",")
-        feat = QgsFeature(fields)
+        feat = QgsFeature(prov.fields())
 
         feat.setGeometry(
             QgsGeometry.fromPointXY(
@@ -317,6 +313,7 @@ def create_locations_layer_from_csv(
     locations_layer.setCrs(QgsCoordinateReferenceSystem("EPSG:4326"))
     locations_layer.updateExtents()
     locations_layer.commitChanges()
+    locations_layer.dataProvider().createSpatialIndex()
 
     error = save_location_heatmap_gpkg(locations_layer)
 
@@ -464,6 +461,7 @@ def create_heatmap_layers(
         heatmap_layer.setRenderer(heatmap_renderer)
         heatmap_layer.exportNamedStyle(doc, read_write_context)
         heatmap_layer.commitChanges()
+        heatmap_provider.createSpatialIndex()
 
         error = save_location_heatmap_gpkg(heatmap_layer)
 
@@ -607,7 +605,7 @@ def create_demographic_layers(
     return demo_layers
 
 
-def get_styled_demo_layer(table_attributes: list, demo_layer: QgsVectorLayer):
+def get_styled_demo_layer(table_attributes: list, demo_layer: QgsVectorLayer) -> QgsVectorLayer:
     for field_name in demo_layer.fields().names():
         if field_name not in table_attributes:
             continue
@@ -658,6 +656,7 @@ def get_styled_demo_layer(table_attributes: list, demo_layer: QgsVectorLayer):
             renderer.addCategory(category)
         demo_layer.setRenderer(renderer)
         demo_layer.commitChanges()
+    demo_layer.dataProvider().createSpatialIndex()
 
     doc = QDomDocument()
     read_write_context = QgsReadWriteContext()
@@ -834,10 +833,8 @@ for i, layer in enumerate(heatmap_layers):
     heatmap_tree_group.insertChildNode(i, tree_layer)
 
 for i, table_layer_list in enumerate(demo_groups):
-    logging.info(f"{i = }, {table_layer_list = }")
     sub_group = demo_tree_group.addGroup(table_layer_list[0])
     for j, layer in enumerate(table_layer_list[1]):
-        logging.info(f"{j = }, {table_layer_list = }")
         project.addMapLayer(layer, False)
         tree_layer = QgsLayerTreeLayer(layer)
         tree_layer.setItemVisibilityChecked(False)
