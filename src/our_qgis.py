@@ -6,7 +6,6 @@ from qgis.core import (
     QgsGeometry,
     QgsPointXY,
     QgsVectorFileWriter,
-    QgsVectorDataProvider,
     QgsHeatmapRenderer,
     QgsGradientColorRamp,
     QgsFeature,
@@ -15,9 +14,9 @@ from qgis.core import (
     QgsField,
     QgsCoordinateReferenceSystem,
     QgsReadWriteContext,
-    QgsCategorizedSymbolRenderer,
-    QgsSymbol,
-    QgsRendererCategory,
+    QgsFillSymbol,
+    QgsStyle,
+    QgsGraduatedSymbolRenderer,
     QgsLayerTreeLayer,
 )
 from PyQt5.QtCore import QVariant
@@ -221,6 +220,7 @@ logging.info("==================================================================
 logging.info(
     f"Saving location and heatmap GPKGs to {str(LOCATION_HEATMAP_GPKG_OUTPUT)}"
 )
+logging.info(f"Saving census GPKGs to {str(CENSUS_DATA_GPKG_OUTPUT)}")
 # Create a project
 project = QgsProject.instance()
 project.read()
@@ -246,22 +246,53 @@ def read_housing_data_and_create_temp_location_points_layer(
         for path in all_metros_directory.rglob("*.csv")
         if zip_code_csv_regex.match(path.stem) is not None
     ]
-    logging.info(csv_files)
     first = True
     for zip_code_file in csv_files:
         with open(zip_code_file, "r", encoding="utf-8") as f:
-            lines = [line.strip("\r\n") for line in f.readlines() if line.strip("\r\n")]
+            reader = csv.reader(f)
             if first:
                 first = False
-                headers = lines[0].split(",")
-            merged_csv_contents.extend(lines[1:])
+                headers = next(reader)
+            else:
+                next(reader)
+            merged_csv_contents.extend(list(reader))
 
-    # Create the csv path (csv_info) and add the csv headers to the path
-    csv_info = f"Point?crs=EPSG:4326{''.join([f'&field={header}' for header in headers])}"
+    field_type_map = {
+        "PRICE": QVariant.Type.Int,
+        "SQUARE FEET": QVariant.Type.Int,
+        "Electricity": QVariant.Type.Bool,
+        "Natural Gas": QVariant.Type.Bool,
+        "Propane": QVariant.Type.Bool,
+        "Diesel/Heating Oil": QVariant.Type.Bool,
+        "Wood/Pellet": QVariant.Type.Bool,
+        "Solar Heating": QVariant.Type.Bool,
+        "Heat Pump": QVariant.Type.Bool,
+        "Baseboard": QVariant.Type.Bool,
+        "Furnace": QVariant.Type.Bool,
+        "Boiler": QVariant.Type.Bool,
+        "Radiator": QVariant.Type.Bool,
+        "Radiant Floor": QVariant.Type.Bool,
+        "LATITUDE": QVariant.Type.Double,
+        "LONGITUDE": QVariant.Type.Double,
+        "ADDRESS": QVariant.Type.String,
+        "CITY": QVariant.Type.String,
+        "STATE OR PROVINCE": QVariant.Type.String,
+        "YEAR BUILT": QVariant.Type.Int,
+        "ZIP OR POSTAL CODE": QVariant.Type.Int,
+    }
+    csv_layer_pre_data = QgsVectorLayer("Point?crs=EPSG:4326", "Locations", "memory")
+
+    csv_layer_pre_data.dataProvider().addAttributes(
+        [
+            QgsField(header, field_type_map.get(header, QVariant.Type.Invalid))
+            for header in headers
+        ]
+    )
+    csv_layer_pre_data.updateFields()
 
     # layer, csv, headers, attributes
     return (
-        QgsVectorLayer(csv_info, "Locations", "memory"),
+        csv_layer_pre_data,
         merged_csv_contents,
         headers,
         list(itertools.dropwhile(lambda x: x != "Electricity", headers)),
@@ -284,29 +315,27 @@ def create_locations_layer_from_csv(
     Returns:
         QgsVectorDataProvider: _description_
     """
-    # list of location dots to be added to the layer
     feats = []
     locations_layer.startEditing()
-    prov = locations_layer.dataProvider()
 
     for line in csv_contents:
-        csv_values = line.split(",")
-        feat = QgsFeature(prov.fields())
+        feat = QgsFeature(locations_layer.fields())
 
         feat.setGeometry(
             QgsGeometry.fromPointXY(
                 QgsPointXY(
-                    float(csv_values[csv_headers.index("LONGITUDE")]),
-                    float(csv_values[csv_headers.index("LATITUDE")]),
+                    float(line[csv_headers.index("LONGITUDE")]),
+                    float(line[csv_headers.index("LATITUDE")]),
                 )
             )
         )
 
-        for header, csv_value in zip(csv_headers, csv_values):
+        for header, csv_value in zip(csv_headers, line):
             feat[header] = csv_value
+
         feats.append(feat)
 
-    prov.addFeatures(feats)
+    locations_layer.addFeatures(feats)
     locations_layer.setRenderer(
         locations_layer.renderer().defaultRenderer(locations_layer.geometryType())
     )
@@ -317,7 +346,7 @@ def create_locations_layer_from_csv(
 
     error = save_location_heatmap_gpkg(locations_layer)
 
-    if error == QgsVectorFileWriter.WriterError.NoError:
+    if error[0] == QgsVectorFileWriter.WriterError.NoError:
         locations_layer_path = (
             f"{LOCATION_HEATMAP_GPKG_OUTPUT}|layername={locations_layer.name()}"
         )
@@ -326,6 +355,7 @@ def create_locations_layer_from_csv(
         logging.error(
             f"Encountered error {error} when writing {locations_layer.name()}"
         )
+
     return locations_layer
 
 
@@ -351,7 +381,8 @@ def save_location_heatmap_gpkg(layer: QgsVectorLayer):
         # create
         options = QgsVectorFileWriter.SaveVectorOptions()
         options.layerName = layer.name()
-        options.attributes = layer.attributeList()
+        options.fileEncoding = layer.dataProvider().encoding()
+        options.attributes = layer.attributeList()  # just putting for sakes
 
         error = QgsVectorFileWriter.writeAsVectorFormatV3(
             layer,
@@ -359,7 +390,7 @@ def save_location_heatmap_gpkg(layer: QgsVectorLayer):
             project.transformContext(),
             options,
         )
-    return error[0]
+    return error
 
 
 # Saves the demographic layers in a database
@@ -384,6 +415,7 @@ def save_census_data_gpkg(layer: QgsVectorLayer):
         # create
         options = QgsVectorFileWriter.SaveVectorOptions()
         options.layerName = layer.name()
+        options.fileEncoding = layer.dataProvider().encoding()
         options.attributes = layer.attributeList()
 
         error = QgsVectorFileWriter.writeAsVectorFormatV3(
@@ -392,12 +424,12 @@ def save_census_data_gpkg(layer: QgsVectorLayer):
             project.transformContext(),
             options,
         )
-    return error[0]
+    return error
 
 
 # Used to create heatmap layers from csv heating data
 def create_heatmap_layers(
-    location_layer_prov: QgsVectorDataProvider,
+    locations_layer: QgsVectorLayer,
     attributes: typing.List[str],
 ) -> list[QgsVectorLayer]:
     """Generate heat maps for the given attributes. Make sure that when you are rendering that you add all of these to a tree
@@ -406,12 +438,12 @@ def create_heatmap_layers(
         prov (QgsVectorDataProvider): _description_
         attributes (typing.List[str]): _description_
     """
+    logging.info(attributes)
     heating_layers: list[QgsVectorLayer] = []
     doc = QDomDocument()
     read_write_context = QgsReadWriteContext()
     # Create a heatmap layer for each attribute in heating_attributes
     for attribute_name in attributes:
-        # horizontal
         # Checks if there is already a layer for an attribute, and if not it creates one. eg if there is no diesel in the csv, still make the diesel layer
         heatmap_layer = None
         # If group is empty or if layer for attribute doesn't exist, create the layer. else get that layer
@@ -437,35 +469,34 @@ def create_heatmap_layers(
             exit()
         new_feats = []
         heatmap_layer.startEditing()
-        heatmap_provider = heatmap_layer.dataProvider()
-        # Determine if a feature is worth putting on a layer
-        # vertical
-        for feat in location_layer_prov.getFeatures():
+        # Determine if a feature is worth putting on current layer
+        for feat in locations_layer.getFeatures():
             try:
                 # value inside the csv file for wether a house has Electricity, NG, etc
-                if feat[attribute_name] == "true":
+                if feat[attribute_name] is True:
                     new_feats.append(QgsFeature(feat))
             except KeyError:
                 logging.error(
                     f"Could not find {attribute_name} field in {heatmap_layer.name()}"
                 )
-        heatmap_provider.addFeatures(new_feats)
+        heatmap_layer.dataProvider().addFeatures(new_feats)
         heatmap_layer.updateExtents()
+        heatmap_layer.commitChanges()
 
+        heatmap_layer.startEditing()
         heatmap_renderer = QgsHeatmapRenderer()
         heatmap_renderer.setWeightExpression("1")
-        heatmap_renderer.setRadius(10)
+        heatmap_renderer.setRadius(15)
         heatmap_renderer.setColorRamp(
             QgsGradientColorRamp(QColor(255, 16, 16, 0), QColor(67, 67, 215, 255))
         )
         heatmap_layer.setRenderer(heatmap_renderer)
         heatmap_layer.exportNamedStyle(doc, read_write_context)
         heatmap_layer.commitChanges()
-        heatmap_provider.createSpatialIndex()
 
         error = save_location_heatmap_gpkg(heatmap_layer)
 
-        if error == QgsVectorFileWriter.WriterError.NoError:
+        if error[0] == QgsVectorFileWriter.WriterError.NoError:
             heatmap_layer_path = (
                 f"{LOCATION_HEATMAP_GPKG_OUTPUT}|layername={heatmap_layer.name()}"
             )
@@ -605,57 +636,27 @@ def create_demographic_layers(
     return demo_layers
 
 
-def get_styled_demo_layer(table_attributes: list, demo_layer: QgsVectorLayer) -> QgsVectorLayer:
+def get_styled_demo_layer(
+    table_attributes: list, demo_layer: QgsVectorLayer
+) -> QgsVectorLayer:
     for field_name in demo_layer.fields().names():
         if field_name not in table_attributes:
             continue
-        unique_values = demo_layer.uniqueValues(demo_layer.fields().indexOf(field_name))
-        new_uniques = []
-        for variant in unique_values:
-            if isinstance(variant, QVariant):
-                try:
-                    if variant.isNull():
-                        continue
-                    else:
-                        raise AttributeError
-                except AttributeError:
-                    logging.info(f"{type(variant) = }, {variant = }")
-                    exit()
-            elif variant is None:
-                continue
-            else:
-                formatted_val = float(variant)
-            if formatted_val < 0.0:
-                continue
-            new_uniques.append(formatted_val)
-
-        if len(new_uniques) == 0:
-            # this shouldnt hit, should always have at least one None in list
-            continue
-        try:
-            unique_max = max(new_uniques)
-        except ValueError:
-            continue
-        try:
-            unique_min = min(new_uniques)
-        except ValueError:
-            continue
-
-        color_ramp = QgsGradientColorRamp(
-            QColor(255, 255, 255, 160), QColor(0, 0, 255, 160)
+        # might help: https://gis.stackexchange.com/a/342412/234305
+        default_style = QgsStyle().defaultStyle()
+        color_ramp = default_style.colorRamp("Blues")
+        renderer = QgsGraduatedSymbolRenderer.createRenderer(
+            demo_layer,
+            field_name,
+            8,
+            QgsGraduatedSymbolRenderer.Mode.Quantile,
+            QgsFillSymbol.createSimple({"color": "#000dfe"}),
+            color_ramp,
         )
-
-        renderer = QgsCategorizedSymbolRenderer(field_name)
-        demo_layer.startEditing()
-        for value in new_uniques:
-            symbol = QgsSymbol.defaultSymbol(demo_layer.geometryType())
-            symbol_layer = symbol.symbolLayer(0)
-            translated_val = translate(value, unique_min, unique_max, 0, 1)
-            symbol_layer.setColor(color_ramp.color(translated_val))
-            category = QgsRendererCategory(value, symbol, str(value))
-            renderer.addCategory(category)
+        renderer.sortByValue()
+        renderer.updateRangeLowerValue(0, 0)
         demo_layer.setRenderer(renderer)
-        demo_layer.commitChanges()
+
     demo_layer.dataProvider().createSpatialIndex()
 
     doc = QDomDocument()
@@ -663,7 +664,7 @@ def get_styled_demo_layer(table_attributes: list, demo_layer: QgsVectorLayer) ->
     demo_layer.exportNamedStyle(doc, read_write_context)
     error = save_census_data_gpkg(demo_layer)
 
-    if error == QgsVectorFileWriter.WriterError.NoError:
+    if error[0] == QgsVectorFileWriter.WriterError.NoError:
         demo_layer_path = f"{CENSUS_DATA_GPKG_OUTPUT}|layername={demo_layer.name()}"
         new_layer = QgsVectorLayer(demo_layer_path, f"{demo_layer.name()}", "ogr")
         new_layer.importNamedStyle(doc)
@@ -728,7 +729,7 @@ def create_styled_demographics_group_layers(
         for i, _ in enumerate(attr_chunk):
             desired_census_columns.append(attr_chunk[i])
             demo_layer.startEditing()
-            demo_prov.addAttributes([QgsField(attr_chunk[i], QVariant.Type.String)])
+            demo_prov.addAttributes([QgsField(attr_chunk[i], QVariant.Type.Double)])
             demo_layer.commitChanges()
         break
     demo_layer.updateFields()
@@ -754,7 +755,6 @@ def create_styled_demographics_group_layers(
         target_zip_code_data_dict = zip_data_dict.get(target_zip_code, "")
         if isinstance(target_zip_code_data_dict, str):
             # theres a lot of these, so try not to enable
-            # logging.warning(f"Could not find zip code dict entry for {target_zip_code}!")
             demo_layer.commitChanges()
             continue
         # the census_column_dict relies on the fact that desired_census_columns have been added as data provider attributes (fields) to the layer
@@ -810,39 +810,41 @@ def read_demographic_data(directory: Path) -> list[tuple[str, list[QgsVectorLaye
     return demo_groups
 
 
-(
-    csv_layer,
-    csv_contents,
-    csv_headers,
-    csv_attributes,
-) = read_housing_data_and_create_temp_location_points_layer(METRO_DIRECTORY)
-location_layer = create_locations_layer_from_csv(csv_contents, csv_headers, csv_layer)
-heatmap_layers = create_heatmap_layers(location_layer.dataProvider(), csv_attributes)
-demo_groups = read_demographic_data(CENSUS_DIRECTORY)
+if __name__ == "__console__":
+    (
+        csv_layer,
+        csv_contents,
+        csv_headers,
+        csv_attributes,
+    ) = read_housing_data_and_create_temp_location_points_layer(METRO_DIRECTORY)
+    location_layer = create_locations_layer_from_csv(
+        csv_contents, csv_headers, csv_layer
+    )
+    heatmap_layers = create_heatmap_layers(location_layer, csv_attributes)
+    demo_groups = read_demographic_data(CENSUS_DIRECTORY)
 
-heatmap_tree_group = QgsLayerTreeGroup("Heating Types")
-demo_tree_group = QgsLayerTreeGroup("Demographics")
-layer_tree_root.insertChildNode(0, heatmap_tree_group)
-layer_tree_root.insertChildNode(1, demo_tree_group)
+    heatmap_tree_group = QgsLayerTreeGroup("Heating Types")
+    demo_tree_group = QgsLayerTreeGroup("Demographics")
+    layer_tree_root.insertChildNode(0, heatmap_tree_group)
+    layer_tree_root.insertChildNode(1, demo_tree_group)
 
-
-for i, layer in enumerate(heatmap_layers):
-    project.addMapLayer(layer, False)
-    tree_layer = QgsLayerTreeLayer(layer)
-    tree_layer.setItemVisibilityChecked(False)
-    heatmap_tree_group.insertChildNode(i, tree_layer)
-
-for i, table_layer_list in enumerate(demo_groups):
-    sub_group = demo_tree_group.addGroup(table_layer_list[0])
-    for j, layer in enumerate(table_layer_list[1]):
+    for i, layer in enumerate(heatmap_layers):
         project.addMapLayer(layer, False)
         tree_layer = QgsLayerTreeLayer(layer)
         tree_layer.setItemVisibilityChecked(False)
-        sub_group.insertChildNode(j, tree_layer)
-    demo_tree_group.insertChildNode(i, sub_group)
+        heatmap_tree_group.insertChildNode(i, tree_layer)
 
-heatmap_tree_group.setExpanded(False)
-demo_tree_group.setExpanded(False)
+    for i, table_layer_list in enumerate(demo_groups):
+        sub_group = demo_tree_group.addGroup(table_layer_list[0])
+        for j, layer in enumerate(table_layer_list[1]):
+            project.addMapLayer(layer, False)
+            tree_layer = QgsLayerTreeLayer(layer)
+            tree_layer.setItemVisibilityChecked(False)
+            sub_group.insertChildNode(j, tree_layer)
+        demo_tree_group.insertChildNode(i, sub_group)
 
-project.addMapLayer(location_layer)  # goes to front
-logging.debug("Last one")
+    heatmap_tree_group.setExpanded(False)
+    demo_tree_group.setExpanded(False)
+
+    project.addMapLayer(location_layer)  # goes to front
+    logging.debug("Last one")
